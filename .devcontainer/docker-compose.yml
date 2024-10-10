@@ -1,0 +1,64 @@
+version: '3.3'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    networks:
+      - my_network
+    volumes:
+      - ..:/workspace
+    ports:
+      - "8000:8000"
+      - "8080:8080"
+    depends_on:
+      - mai-lab-01-db
+      - mai-lab-01-mongodb
+      - mai-lab-01-cache
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db/postgres
+
+  mai-lab-01-db:
+    image: postgres:14
+    container_name: mai-lab-01-db
+    networks:
+      - my_network
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  mai-lab-01-mongodb:
+    image: mongo:5.0
+    container_name: mai-lab-01-mongodb
+    restart: on-failure
+    networks:
+      - my_network
+    volumes:
+      - mongodbdata:/data/db
+      - ./mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
+    ports:
+      - '27017:27017'
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+
+  mai-lab-01-cache:
+    container_name: mai-lab-01-cache
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning 
+    networks:
+      - my_network
+
+networks:
+  my_network:
+volumes:
+  postgres-data:
+  mongodbdata:

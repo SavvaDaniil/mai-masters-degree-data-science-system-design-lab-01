@@ -1,0 +1,2273 @@
+{
+  "configuration" : { },
+  "description" : "демонстрационный пример для показа техник ведения проектной документацииы",
+  "documentation" : {
+    "decisions" : [ {
+      "content" : "# 1. Использование PostgreSQL в качестве основного хранилище данных\n\nDate: 2023-06-06\n\n## Status\n\nAccepted\n\n## Context\n\nДля хранения информации о клиентах, совершаемых платежах, подписках и т.д. необходимо зранить информацию в долговременном носителе;\n\n## Decision\n\n#### SQL хранилище на основе PostgreSQL 14\n\n##### Плюсы\n\n* Возможность совершать запросы к хранилищу по различным критериям (поиск всех клиентов с неоплачеными счетами, различные критерии выбора клиентов и т.д.)\n\n##### Минусы\n\n* Необходимо заранее продумать модель данных, критерии индексирования. Будет затруднено хранение слабоструктурированных данных.\n* Для построения кластера нужно применять внешнее решение (patroni)\n\n#### NoSQL хранилище на основе MongoDB\n\n##### Плюсы\n\nВозможность менять/расширять модель хранения данных. Высокопроизводительные запросы по ключевым полям. Возможность построения кластера (из коробки)\n\n##### Минусы\n\nПроизвольные запросы по связанным сущностям, будут не так эффективны.\n\n## Результат\n\nВариант 1\n\n### Consequences\n\nДля обеспечения отказоустойчивости необходимо отдельно разворачивать кластер на patroni.\n",
+      "date" : "2023-06-06T00:00:00Z",
+      "format" : "Markdown",
+      "id" : "1",
+      "status" : "Accepted",
+      "title" : "Использование PostgreSQL в качестве основного хранилище данных"
+    }, {
+      "content" : "# 2. Репликация хранилища данных на PostgreSQL\n\nDate: 2023-06-06\n\n## Status\n\nDraft\n\nЗависит от [Выбор PostgreSQL](#1)\n\n## Context\n\nДля обеспечения обработки большого количества запросов на чтение данных необходимо разработать стратегию масштабирования хранилища на PostgreSQL\n\n## Decision\n\nРассматриваемые варианты:\n1. Построение репликации Master-Slave\n2. Построение кеширующего слоя на Redis\n\n**Плюсы решения 1:**\nВозможность перенаправлять запросы \"чисто на чтение\" к Slave реплике, снижая нагрузку на master. Возможность увеличивать количество Slave реплик.\n\n**Минусы решения 1:**\nПри увеличении числа запросов на запись такая тактика не поможет снять нагрузку\n\n**Плюсы решения 2:**\nПри реализации паттернов \"сквозное чтение\" и \"сквозная запись\" кластер Redis может помочь снизить нагрузку на систему хранения в PostgreSQL, если в нем сохранять копии основных данных.\n\n**Минусы решения 2:**\nЕсть вероятность того что не получится подобрать оптимальную стратегию кеширования (будет много cache-miss). Не очевидна оптимальная стартегия прогрева кеша.\n\n**Выбирается решение 1**\n\n## Consequences\nДля обеспечения отказоустойчивости необходимо отдельно разворачивать кластер на patroni и осуществить настройку синхронной репликации.\nНа стороне бизнес-логики нужно поддержать разделение запросов на чтение и записиь и обеспечить обращение к разным репликам.",
+      "date" : "2023-06-06T00:00:00Z",
+      "format" : "Markdown",
+      "id" : "2",
+      "links" : [ {
+        "description" : "Зависит от",
+        "id" : "1"
+      } ],
+      "status" : "Draft",
+      "title" : "Репликация хранилища данных на PostgreSQL"
+    }, {
+      "content" : "# 3. Не использование механизмов ORM\n\nDate: 2023-06-07\n\n## Status\n\nProposed\n\nЗависит от [Выбор PostgreSQL](#1)\n\n# Context\n\nДля получение/изменение данных в PostgreSQL необходимо выбрать Framework\n\n## Decision\n\nРассматриваемые варианты:\n1. Использование механизмов ORM\n2. Выполнение запросов \"на прямую\" используя ANSI SQL\n3. Реализация слоя хранимых процедур в PostgreSQL\n\n**Плюсы решения 1:**\nПростота разработки\n\n**Минусы решения 1:**\nНе прозрачные механизмы запроса/кеширования данных\n\n**Плюсы решения 2:**\nПоддержка независимости от СУБД\n\n**Минусы решения 2:**\nНеобходимо в коде писать SQL запросы, сложность в разработке и отладке кода.\n\n**Плюсы решения 3:**\nУпрощение читаемости кода backend. Большая производительность запросов за счет возможной предкомпиляции запросов на стороне PostgreSQL.\n\n**Минусы решения 3:**\nЗависимость от производителя СУБД.\n\n**Выполнение запросов \"на прямую\" используя ANSI SQL**\n\n## Consequences\nНеобходимо в бизнес-логике создать слой абстракции над базой данных, которая будет осуществлять запросы и хранить \"код на SQL\"",
+      "date" : "2023-06-07T00:00:00Z",
+      "format" : "Markdown",
+      "id" : "3",
+      "links" : [ {
+        "description" : "Зависит от",
+        "id" : "1"
+      } ],
+      "status" : "Proposed",
+      "title" : "Не использование механизмов ORM"
+    } ],
+    "sections" : [ {
+      "content" : "##  Введение и цели\n\n### Обзор требований\n\nРодители хотят отслеживать перемещение детей (дети самостоятельно ходят в школу, в вечерние кружки, спортивные секции). Сейчас базовая потребность решается встроенными в смартфоны трэкерами. Но вот что \"не решается\" так это безопасность ребенка (вдруг какой-нибудь маньяк пристанет) или \"нежелательное поведение ребенка\" (курит за гаражами).\n\nАренда дрона, который в автоматическом режиме сопроводит ребенка из школы/секции домой  (или наоборот). Может при этом транслировать видео родителям, автоматически выявлять \"нападение маньяков\" и сигнализировать в ЧОП (гольфстрим). Сами дроны можно размещать на столбах \"базовых станций\" оборудуя на них станции \"подзарядки\".\n\nПредполагается поминутная аренда дронов по аналогии с carsharing.\n\n### Основные качественные характеристики\n* Согласно статистике на 2021 год в России было 143.4 млн человек из них 7.7 млн детей до 18 лет. То есть, дети составляют 5% от общей численности \n* Изначально планируем запускать в масштабах города с начеление до 1 млн. человек\n* Рассчитываем что максимальное количество потенциальных пользователей будет 5% от 1 млн, т.е. 20 000\n* Предполагаем проникновение услуги в 10% домохозяйств. Т.е. мы будем считать что наша аудитория 2000 потенциальных пользователей\n* Предполагаем, что основной спрос на услугу будет в вечернее время с 18 до 21. Т.е. в течении 3 часов. А среднее время сопровождения 30 минут. \n\n### Стейкхолдеры\n\nРазработка производистя по заказу Департамента Информационных Технологий Города Междуреченска (контакт: i@dont.know). Департамент заинтересован в снижении уровня приступности на улицах города в кратчайшие сроки.\n\n\n",
+      "filename" : "01_introductions_and_goals.md",
+      "format" : "Markdown",
+      "order" : 1,
+      "title" : ""
+    }, {
+      "content" : "## Ограничения\n\n* В процессе разработки необходимо использовать только отечественные дроны, работающие под управлением ОС Аврора.\n* Бизнес-логика должна быть написана на языке программирования GoLang\n* В качестве опреационной системы (и базовых образов для контейнеров) используется ОС Ububtu Server 22",
+      "filename" : "02_constrains.md",
+      "format" : "Markdown",
+      "order" : 2,
+      "title" : ""
+    }, {
+      "content" : "## Контекст\n\n![system context](embed:SystemLandscape)\n\nДля работы системы необходимо интегрироваться с внешней платежной системы (НСПК), охранным агенством (Гольфстрим или Цезарь-Сателит - пока в процессе выбора) и собственным флотом дронов.",
+      "filename" : "03_context_and_scope.md",
+      "format" : "Markdown",
+      "order" : 3,
+      "title" : ""
+    }, {
+      "content" : "## Стратегия решения\n\n\n* Система должна быть приспособлена для поддержки большого числа пользователей. С учетом того, что дроны будут использоваться \"локально\" (то есть в окрестностях места жительства) будем применять шардирование по геолокациям.\n* Для масштабирования подсистемы управления дронами будем применять ассинхронное взаимодействие по MQTT с применением кластера RabbitMQ (federation).\n* Вся разработка будет вестись собственными силами, без привлечения сторонних команд или аутсорсеров.",
+      "filename" : "04_solution_strategy.md",
+      "format" : "Markdown",
+      "order" : 4,
+      "title" : ""
+    }, {
+      "content" : "## Строительные блоки\n\n![](embed:Containers)\n\n\n| **Имя**                              | **Решаемые задачи**                           |\n|--------------------------------------|-----------------------------------------------|   \n| Мобильное приложение клиента         |  Мобильное приложение (Android/iOS) через которое клиент производит управление услугой, получает нотификации и может просматривать видео с дронов|\n| Веб приложение клиента               |  Вуб портал через который клиент производит управление услугой, получает нотификации и может просматривать видео с дронов                                   |\n| Backend мобильного приложения клиента|  API мобильного клиента построенноый по патерну BFF. Основная задача - аггрегация и данных для клиента, аутентификация и авторизация, роутинг запросов к внутренним системам|\n| Backend веб приложения клиента       |  PI веб приложения клиента построенноый по патерну BFF. Основная задача - аггрегация и данных для клиента, аутентификация и авторизация, роутинг запросов к внутренним системам|\n| Single Sign On                       |  Система аутентификации и авторизации клиентов (KeyCloak)|\n| Billing                              |  Система управления клиентскими подписками и контроля расхода баланса|\n| Inventory                            |  Система учета дронов (отвечает за инвентаризацию дронов, хранение статуса доступности, учета регламентных работ по обслуживанию дронов)|\n| Clients                              |  Система учета данных о пользователях|\n| Tracker                              |  Система управления взаимодействием с дронами|\n\n\n### Single Sign On\nИспользуется open-source система KeyCloak. Настраиваается авторизация на очнове JWT токенов \n### Billing\n![](embed:Billing)\n\n### Inventory\n![](embed:Inventory)\n\n### Clients\n![](embed:CRM)\n\n### Tracker\n![](embed:Tracking)\n\n\n\n",
+      "filename" : "05_building_block_view.md",
+      "format" : "Markdown",
+      "order" : 5,
+      "title" : ""
+    }, {
+      "content" : "## Runtime\n\n### Use-cases\n\n#### UC01 Поиск и аренда дрона\n##### Описание\nНачало использования дрона: включает поиск, аренду и установление объекта слежения\n##### Действующие лица\nКлиент\n##### Максимальные гарантии\nДрон найден и выбран, для дрона установлена цель слежения, на счету клиента достаточно средств\n##### Предусловия\n* Клиент успешно авторизован в системе\n* Данные о маршрутах детей внесены в систему\n* Данные о мобильных телефонах детей внесены в систему\n##### Диаграмма\n![](embed:UC01)\n##### Шаги основного сценария\n1. Клиент открывает мобильное приложение \n2. Мобильное приложение запрашивает данные для аутентификации клиента и проверяет их через WebSSO\n3. Клиент выбирает раздел \"Заказ дрона\"\n4. Мобильное приложение запрашивает backend для поиска дрона\n5. Backend мобильного приложения запускает на BPM сценарий поиска дрона\n6. BPM получает в CRM данные по клиенту и его детям\n7. BPM получает информацию о маршруте ребенка\n8. BPM получает информацию о текущем положении ребенка из MLC\n9. BPM получает данные по достаточности баланса у клиента\n10. BPM получает данные в inventory о свободных дронах\n11. BPM передает команду на дрона о начале трэкинга\n    \n##### Альтернативные сценарии\n9.a У клиента недостаточно средств на счету, в мобильное приложение возвращается код ошибки. Клиенту предлагается пополнить счет\n\n\n### Потоки данных\n\n|id|Система поставщик|Система потребитель|Сущности|Тип интеграции|\n---|-----------------|-------------------|--------|---------------\n|1|MLC|мобильный телохранитель|Геопозиция клиента|REST API|\n|2|SSO|мобильный телохранитель|Клиент|REST API|",
+      "filename" : "06_runtime_view.md",
+      "format" : "Markdown",
+      "order" : 6,
+      "title" : ""
+    }, {
+      "content" : "## Deployment\n\n![](embed:vs)",
+      "filename" : "07_deployment_view.md",
+      "format" : "Markdown",
+      "order" : 7,
+      "title" : ""
+    }, {
+      "content" : "## Инфраструктурные варианты использования\n\n### Логическая модель данных\n\n|Сущность|Назначение|\n---------|-----------\n|Client|Клиент, которому выставляются счета|\n|Invoice|Ежемесячный счет клиенту|\n|Payment|Платеж по подписке|\n|Usage|Информация о потреблении услуг|\n\n### Авторизация и аутентификация\n\n### Мониторинг\n\n### Логгирование\n\n### Политика кеширования клиентских данных",
+      "filename" : "08_crosscutting_concepts.md",
+      "format" : "Markdown",
+      "order" : 8,
+      "title" : ""
+    }, {
+      "content" : "## Quality Requirements \n\n<!-- Этот раздел содержит все требования к качеству в виде дерева качества со сценариями. Наиболее важные из них уже были описаны в разделе (цели в области качества). Здесь также можно отразить требования к качеству с меньшим приоритетом, которые не создадут высоких рисков при их неполном выполнении. \n-->\n\n### Требования по производительности\n\n|Источник события|Объект воздействия|Среда выполнения|Реакция|Измерение|\n-----------------|------------------|----------------|-------|-----------\n|Пользователь|Запрос поиска доступных дронов|Мобильное приложение в ЧНН (19:00-21:00)|Показ доступных дронов в выбраном регионе|3 сек|\n|Пользователь|Запрос поиска доступных дронов|Мобильное приложение вне ЧНН|Показ доступных дронов в выбраном регионе|1 сек|\n\n### Требования по доступности\n### Требования по надежности\n### Требования по безопасности",
+      "filename" : "09_quality.md",
+      "format" : "Markdown",
+      "order" : 9,
+      "title" : ""
+    }, {
+      "content" : "## Нефункциональные требования\n\n|Риск|Влияние|Вероятность|Действия по уменьшению вероятности/влияния|\n-----|-------|-----------|-------------------------------------------\n|Сложность отслеживания объекта в подземных переходах и общественном транспорте|Высокое|Высокая|Использование геолокации в смартфоне ребенка как вспомогательного средства геопозиционирования|\n|Вероятность столкновения дрона с деревьями/проводами|Высокое|Средняя|Оборудование дронов лидаром и построение точных карт местности|",
+      "filename" : "10_risks_and_technical_dept.md",
+      "format" : "Markdown",
+      "order" : 10,
+      "title" : ""
+    }, {
+      "content" : "## Глоссарий\n\n\n|Термин|Описание|\n-------|---------\n|Дрон|Автономное аэромобильное мобильное устройство, осуществляющее функциии видеонаблюдения|\n|ЧОП|Частное охранное агентсво - прердприятие по оказанию услуг в области безопасности|",
+      "filename" : "11_glossary.md",
+      "format" : "Markdown",
+      "order" : 11,
+      "title" : ""
+    } ]
+  },
+  "id" : 1,
+  "lastModifiedAgent" : "structurizr-ui",
+  "lastModifiedDate" : "2024-10-10T07:23:33Z",
+  "model" : {
+    "deploymentNodes" : [ {
+      "containerInstances" : [ {
+        "containerId" : "12",
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Production",
+        "id" : "112",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.34103350-317e-4803-b9bf-6416079a6dd3.c0581c58-544e-42b0-8c57-6dbc72e530bb"
+        },
+        "relationships" : [ {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "119",
+          "id" : "120",
+          "linkedRelationshipId" : "19",
+          "sourceId" : "112",
+          "technology" : "WebSocket"
+        } ],
+        "tags" : "Container Instance"
+      } ],
+      "description" : "Мобильные телефоны и планшеты клиентов во внешней сети",
+      "environment" : "Production",
+      "id" : "111",
+      "instances" : "1",
+      "name" : "iOS Device",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.34103350-317e-4803-b9bf-6416079a6dd3",
+        "os" : "iOS",
+        "ram" : "8"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "containerInstances" : [ {
+        "containerId" : "12",
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Production",
+        "id" : "114",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.206163bb-4cf5-4caa-ae7a-b574b7a0fcb8.64a0de06-49ee-4358-bcab-e624acb513ce"
+        },
+        "relationships" : [ {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "119",
+          "id" : "121",
+          "linkedRelationshipId" : "19",
+          "sourceId" : "114",
+          "technology" : "WebSocket"
+        } ],
+        "tags" : "Container Instance"
+      } ],
+      "description" : "Мобильные телефоны и планшеты клиентов во внешней сети",
+      "environment" : "Production",
+      "id" : "113",
+      "instances" : "1",
+      "name" : "Android Device",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.206163bb-4cf5-4caa-ae7a-b574b7a0fcb8",
+        "cpu" : "2",
+        "hdd" : "70",
+        "os" : "Android",
+        "ram" : "8"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "containerInstances" : [ {
+        "containerId" : "13",
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Production",
+        "id" : "116",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.25d3dc46-957d-42a9-8726-590477f8fa9e.9890a90a-0f7d-4eff-9276-a54d00935aa0"
+        },
+        "relationships" : [ {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "123",
+          "id" : "124",
+          "linkedRelationshipId" : "20",
+          "sourceId" : "116",
+          "technology" : "WebSocket"
+        } ],
+        "tags" : "Container Instance"
+      } ],
+      "description" : "Стационарные компьютеры пользователей во внешней сети или мобильные устройства с установленным браузером",
+      "environment" : "Production",
+      "id" : "115",
+      "instances" : "1",
+      "name" : "Client Device 2",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.25d3dc46-957d-42a9-8726-590477f8fa9e",
+        "cpu" : "4",
+        "hdd" : "70",
+        "os" : "Windows/MacOS/Linux Ubuntu",
+        "ram" : "8"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "children" : [ {
+        "containerInstances" : [ {
+          "containerId" : "17",
+          "deploymentGroups" : [ "Default" ],
+          "environment" : "Production",
+          "id" : "119",
+          "instanceId" : 1,
+          "properties" : {
+            "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.96b519ea-b728-40e7-a132-a5f2be70843c.b1066c9f-53e0-498b-99d7-cff32a829499.80e24189-b04c-4aaa-8016-7f293829f1fe"
+          },
+          "relationships" : [ {
+            "description" : "Получение данных/ нотификаций/ выполнение запросов",
+            "destinationId" : "127",
+            "id" : "129",
+            "linkedRelationshipId" : "34",
+            "sourceId" : "119",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Container Instance"
+        } ],
+        "description" : "Backend для мобильного приложения",
+        "environment" : "Production",
+        "id" : "118",
+        "instances" : "3",
+        "name" : "BFF Server Mobile",
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.96b519ea-b728-40e7-a132-a5f2be70843c.b1066c9f-53e0-498b-99d7-cff32a829499",
+          "cpu" : "4",
+          "hdd" : "70",
+          "os" : "Oracle Enteprise Linux",
+          "ram" : "16"
+        },
+        "tags" : "Element,Deployment Node"
+      }, {
+        "containerInstances" : [ {
+          "containerId" : "18",
+          "deploymentGroups" : [ "Default" ],
+          "environment" : "Production",
+          "id" : "123",
+          "instanceId" : 1,
+          "properties" : {
+            "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.96b519ea-b728-40e7-a132-a5f2be70843c.bffw1.b5a6063d-b240-43e6-bc8e-7cd4fb0310ac"
+          },
+          "relationships" : [ {
+            "description" : "Получение данных/ нотификаций/ выполнение запросов",
+            "destinationId" : "127",
+            "id" : "128",
+            "linkedRelationshipId" : "35",
+            "sourceId" : "123",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Container Instance"
+        } ],
+        "description" : "Backend для веба",
+        "environment" : "Production",
+        "id" : "122",
+        "instances" : "3",
+        "name" : "BFF Server Web",
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.96b519ea-b728-40e7-a132-a5f2be70843c.bffw1",
+          "cpu" : "4",
+          "hdd" : "70",
+          "os" : "Oracle Enteprise Linux",
+          "ram" : "16"
+        },
+        "tags" : "Element,Deployment Node"
+      } ],
+      "environment" : "Production",
+      "id" : "117",
+      "instances" : "1",
+      "name" : "DMZ",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.96b519ea-b728-40e7-a132-a5f2be70843c"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "children" : [ {
+        "containerInstances" : [ {
+          "containerId" : "33",
+          "deploymentGroups" : [ "Default" ],
+          "environment" : "Production",
+          "id" : "127",
+          "instanceId" : 1,
+          "properties" : {
+            "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.39b18228-9d7c-4418-8db7-276326123113.ad35cbac-61ad-43bb-9d90-7a131a98b824.a2d369c0-3a92-4f37-ae08-56900b549e8a"
+          },
+          "relationships" : [ {
+            "description" : "Запрос данных о свободных дронах/Резервация",
+            "destinationId" : "131",
+            "id" : "132",
+            "linkedRelationshipId" : "58",
+            "sourceId" : "127",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Управление дроном",
+            "destinationId" : "134",
+            "id" : "136",
+            "linkedRelationshipId" : "107",
+            "sourceId" : "127",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Запрос баланса/осуществление платежа",
+            "destinationId" : "138",
+            "id" : "141",
+            "linkedRelationshipId" : "52",
+            "sourceId" : "127",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Container Instance"
+        } ],
+        "description" : "Реализация сценариев трэкинга",
+        "environment" : "Production",
+        "id" : "126",
+        "instances" : "2",
+        "name" : "BPM",
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.39b18228-9d7c-4418-8db7-276326123113.ad35cbac-61ad-43bb-9d90-7a131a98b824",
+          "cpu" : "4",
+          "hdd" : "70",
+          "os" : "Oracle Enteprise Linux",
+          "ram" : "8"
+        },
+        "tags" : "Element,Deployment Node"
+      } ],
+      "environment" : "Production",
+      "id" : "125",
+      "instances" : "1",
+      "name" : "BPM Cluster",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.39b18228-9d7c-4418-8db7-276326123113"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "containerInstances" : [ {
+        "containerId" : "53",
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Production",
+        "id" : "131",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.85050fe1-398b-420b-9f70-b44e59c0fcbc.507f9167-2720-492c-b076-fdf6ec28bace"
+        },
+        "tags" : "Container Instance"
+      } ],
+      "description" : "Учет дронов",
+      "environment" : "Production",
+      "id" : "130",
+      "instances" : "1",
+      "name" : "Inventory server",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.85050fe1-398b-420b-9f70-b44e59c0fcbc",
+        "cpu" : "4",
+        "hdd" : "70",
+        "os" : "Oracle Enteprise Linux",
+        "ram" : "8"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "containerInstances" : [ {
+        "containerId" : "69",
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Production",
+        "id" : "134",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.cac4fce3-d1ff-4597-a3c4-f1e045171137.21688c89-7eb5-4cdc-90c2-bb976eeda031"
+        },
+        "relationships" : [ {
+          "description" : "Обновдение информации о дронах",
+          "destinationId" : "131",
+          "id" : "135",
+          "linkedRelationshipId" : "87",
+          "sourceId" : "134",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Данные об использовании дрона",
+          "destinationId" : "138",
+          "id" : "140",
+          "linkedRelationshipId" : "81",
+          "sourceId" : "134",
+          "technology" : "MQTT :1883"
+        } ],
+        "tags" : "Container Instance"
+      } ],
+      "description" : "Подсистема трэкинга дронов в реальном времени",
+      "environment" : "Production",
+      "id" : "133",
+      "instances" : "1",
+      "name" : "Tracker First",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.cac4fce3-d1ff-4597-a3c4-f1e045171137",
+        "cpu" : "4",
+        "hdd" : "70",
+        "os" : "Oracle Enteprise Linux",
+        "ram" : "8"
+      },
+      "tags" : "Element,Deployment Node"
+    }, {
+      "containerInstances" : [ {
+        "containerId" : "38",
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Production",
+        "id" : "138",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.6adbdba2-222a-4ef4-890c-fb0e3f154e93.e290038b-ce6d-4b8e-a65f-3892a4ae9d29"
+        },
+        "relationships" : [ {
+          "description" : "Информирование об исчерпании средств на подписке",
+          "destinationId" : "134",
+          "id" : "139",
+          "linkedRelationshipId" : "94",
+          "sourceId" : "138"
+        } ],
+        "tags" : "Container Instance"
+      } ],
+      "description" : "Прием оплат и контроль расходов",
+      "environment" : "Production",
+      "id" : "137",
+      "instances" : "1",
+      "name" : "Billing",
+      "properties" : {
+        "structurizr.dsl.identifier" : "aa8748ee-8081-4857-8d1c-a3816dfb4f4d.6adbdba2-222a-4ef4-890c-fb0e3f154e93",
+        "cpu" : "4",
+        "hdd" : "70",
+        "os" : "Oracle Enteprise Linux",
+        "ram" : "32"
+      },
+      "tags" : "Element,Deployment Node"
+    } ],
+    "people" : [ {
+      "description" : "Заказчик услуги, осуществляющий наблюдение за ребенком",
+      "id" : "10",
+      "location" : "Unspecified",
+      "name" : "Пользователь",
+      "properties" : {
+        "structurizr.dsl.identifier" : "user"
+      },
+      "relationships" : [ {
+        "description" : "Управление услугой",
+        "destinationId" : "12",
+        "id" : "108",
+        "properties" : {
+          "structurizr.dsl.identifier" : "7ac9bcfb-b3c4-4029-a4ed-25f0e9ea41a3"
+        },
+        "sourceId" : "10",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Управление услугой",
+        "destinationId" : "11",
+        "id" : "109",
+        "linkedRelationshipId" : "108",
+        "sourceId" : "10"
+      }, {
+        "description" : "Управление услугой",
+        "destinationId" : "13",
+        "id" : "110",
+        "properties" : {
+          "structurizr.dsl.identifier" : "1e59acc6-f5e0-4dc6-9dc7-e19db489b05e"
+        },
+        "sourceId" : "10",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person,Customer,rel:1.1.0"
+    } ],
+    "properties" : {
+      "structurizr.groupSeparator" : "/"
+    },
+    "softwareSystems" : [ {
+      "description" : "Система регистрации платежей по банковским картам, QR кодам и через SPB",
+      "documentation" : { },
+      "group" : "BSS Landscape",
+      "id" : "1",
+      "location" : "Unspecified",
+      "name" : "Внешняя платежная система",
+      "properties" : {
+        "structurizr.dsl.identifier" : "payment_system"
+      },
+      "relationships" : [ {
+        "description" : "пополнение баланса",
+        "destinationId" : "39",
+        "id" : "47",
+        "properties" : {
+          "structurizr.dsl.identifier" : "970fbf6c-840d-419e-9333-d6d0f2c3554c"
+        },
+        "sourceId" : "1",
+        "tags" : "Relationship",
+        "technology" : "REST/HTTP :80",
+        "url" : "http://pay.beeline.ru/"
+      }, {
+        "description" : "пополнение баланса",
+        "destinationId" : "38",
+        "id" : "48",
+        "linkedRelationshipId" : "47",
+        "sourceId" : "1",
+        "technology" : "REST/HTTP :80"
+      }, {
+        "description" : "пополнение баланса",
+        "destinationId" : "11",
+        "id" : "49",
+        "linkedRelationshipId" : "47",
+        "sourceId" : "1",
+        "technology" : "REST/HTTP :80"
+      } ],
+      "tags" : "Element,Software System,ExternalSystem"
+    }, {
+      "description" : "Внешнее партнерское охранное агенство",
+      "documentation" : { },
+      "group" : "Infrastructure platforms",
+      "id" : "2",
+      "location" : "Unspecified",
+      "name" : "ЧОП",
+      "properties" : {
+        "structurizr.dsl.identifier" : "security"
+      },
+      "tags" : "Element,Software System,ExternalSystem"
+    }, {
+      "description" : "Программный межсетевой экран",
+      "documentation" : { },
+      "group" : "Infrastructure platforms",
+      "id" : "3",
+      "location" : "Unspecified",
+      "name" : "FireWall",
+      "properties" : {
+        "structurizr.dsl.identifier" : "firewall"
+      },
+      "tags" : "Element,Software System,ExternalSystem"
+    }, {
+      "containers" : [ {
+        "documentation" : { },
+        "id" : "5",
+        "name" : "Авторизация по логину и паролю",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sso.authorization_password"
+        },
+        "tags" : "Element,Container"
+      }, {
+        "documentation" : { },
+        "id" : "6",
+        "name" : "Авторизация Mobile ID",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sso.authorization_mobile_id"
+        },
+        "tags" : "Element,Container"
+      }, {
+        "documentation" : { },
+        "id" : "7",
+        "name" : "Авторизация по разовому паролю",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sso.authorization_one_time"
+        },
+        "tags" : "Element,Container"
+      } ],
+      "description" : "Аутентификация и авторизация пользователей",
+      "documentation" : { },
+      "group" : "Infrastructure platforms/IDP",
+      "id" : "4",
+      "location" : "Unspecified",
+      "name" : "Single Sign On",
+      "properties" : {
+        "structurizr.dsl.identifier" : "sso"
+      },
+      "relationships" : [ {
+        "description" : "получение профиля клиента по id",
+        "destinationId" : "60",
+        "id" : "63",
+        "properties" : {
+          "structurizr.dsl.identifier" : "072b7cfc-d828-4bb8-8cf9-629e720ebfbd"
+        },
+        "sourceId" : "4",
+        "tags" : "Relationship",
+        "technology" : "REST/HTTP :80"
+      }, {
+        "description" : "получение профиля клиента по id",
+        "destinationId" : "59",
+        "id" : "64",
+        "linkedRelationshipId" : "63",
+        "sourceId" : "4",
+        "technology" : "REST/HTTP :80"
+      }, {
+        "description" : "получение профиля клиента по id",
+        "destinationId" : "11",
+        "id" : "65",
+        "linkedRelationshipId" : "63",
+        "sourceId" : "4",
+        "technology" : "REST/HTTP :80"
+      }, {
+        "description" : "ауктентификация клиента",
+        "destinationId" : "60",
+        "id" : "66",
+        "properties" : {
+          "structurizr.dsl.identifier" : "ccc57819-bcde-4c91-8ed2-d5c7dcd6de22"
+        },
+        "sourceId" : "4",
+        "tags" : "Relationship",
+        "technology" : "REST/HTTP :80"
+      } ],
+      "tags" : "Element,Software System"
+    }, {
+      "description" : "Аэромобильная платформа для наблюдения за пользователями",
+      "documentation" : { },
+      "group" : "OSS Landscape",
+      "id" : "8",
+      "location" : "Unspecified",
+      "name" : "Дрон",
+      "properties" : {
+        "structurizr.dsl.identifier" : "drone"
+      },
+      "relationships" : [ {
+        "description" : "Телеметрия",
+        "destinationId" : "72",
+        "id" : "100",
+        "properties" : {
+          "structurizr.dsl.identifier" : "cfd9bb07-abe4-4ccd-bef3-0f834c7cabd9"
+        },
+        "sourceId" : "8",
+        "tags" : "Relationship",
+        "technology" : "MQTT :1883"
+      }, {
+        "description" : "Телеметрия",
+        "destinationId" : "69",
+        "id" : "101",
+        "linkedRelationshipId" : "100",
+        "sourceId" : "8",
+        "technology" : "MQTT :1883"
+      }, {
+        "description" : "Телеметрия",
+        "destinationId" : "11",
+        "id" : "102",
+        "linkedRelationshipId" : "100",
+        "sourceId" : "8",
+        "technology" : "MQTT :1883"
+      }, {
+        "description" : "События безопасности",
+        "destinationId" : "72",
+        "id" : "103",
+        "properties" : {
+          "structurizr.dsl.identifier" : "e93d2ef7-5ec3-40bf-8c77-d89da4010218"
+        },
+        "sourceId" : "8",
+        "tags" : "Relationship",
+        "technology" : "MQTT :1883"
+      }, {
+        "description" : "Видео",
+        "destinationId" : "12",
+        "id" : "104",
+        "properties" : {
+          "structurizr.dsl.identifier" : "bb6837b0-25d6-47ee-a597-ca5d105e6444"
+        },
+        "sourceId" : "8",
+        "tags" : "Relationship",
+        "technology" : "WebRTC tcp/443"
+      }, {
+        "description" : "Видео",
+        "destinationId" : "13",
+        "id" : "105",
+        "properties" : {
+          "structurizr.dsl.identifier" : "25b47dda-60ba-4a15-bf12-a151c27bfb60"
+        },
+        "sourceId" : "8",
+        "tags" : "Relationship",
+        "technology" : "WebRTC tcp/443"
+      } ],
+      "tags" : "Element,Software System,ExternalSystem"
+    }, {
+      "description" : "Mobile Location Centre",
+      "documentation" : { },
+      "group" : "OSS Landscape",
+      "id" : "9",
+      "location" : "Unspecified",
+      "name" : "MLC",
+      "properties" : {
+        "structurizr.dsl.identifier" : "mlc"
+      },
+      "tags" : "Element,Software System,Externalsystem"
+    }, {
+      "containers" : [ {
+        "description" : "Приложение для осуществления заказа услуги и контроля передвижения",
+        "documentation" : { },
+        "group" : "Клиентские приложения",
+        "id" : "12",
+        "name" : "Мобильное приложение клиента",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.client_mobile_app"
+        },
+        "relationships" : [ {
+          "description" : "Оплата",
+          "destinationId" : "1",
+          "id" : "14",
+          "properties" : {
+            "structurizr.dsl.identifier" : "6fc087bc-c497-4fad-bade-4a5cdee8b6c0"
+          },
+          "sourceId" : "12",
+          "tags" : "Relationship",
+          "url" : "http://pay.beeline.ru/"
+        }, {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "17",
+          "id" : "19",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ext_rel_1"
+          },
+          "sourceId" : "12",
+          "tags" : "Relationship,balanced",
+          "technology" : "WebSocket"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "5",
+          "id" : "21",
+          "properties" : {
+            "structurizr.dsl.identifier" : "bd8d1fbc-6101-4905-8551-cbfe99793309"
+          },
+          "sourceId" : "12",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTPS tcp/443"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "4",
+          "id" : "22",
+          "linkedRelationshipId" : "21",
+          "sourceId" : "12",
+          "technology" : "REST/HTTPS tcp/443"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "6",
+          "id" : "25",
+          "properties" : {
+            "structurizr.dsl.identifier" : "e32cef4d-de09-4c89-86ec-c6fb5a760a0b"
+          },
+          "sourceId" : "12",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTPS tcp/443"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "7",
+          "id" : "27",
+          "properties" : {
+            "structurizr.dsl.identifier" : "6225f81b-df56-4db5-a9fc-b1a726439791"
+          },
+          "sourceId" : "12",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTPS tcp/443"
+        } ],
+        "tags" : "Element,Container,MobileApp",
+        "technology" : "Android/iOS app"
+      }, {
+        "description" : "Приложение для осуществления заказа услуги и контроля передвижения",
+        "documentation" : { },
+        "group" : "Клиентские приложения",
+        "id" : "13",
+        "name" : "Веб приложение клиента",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.client_web_app"
+        },
+        "relationships" : [ {
+          "description" : "Оплата",
+          "destinationId" : "1",
+          "id" : "16",
+          "properties" : {
+            "structurizr.dsl.identifier" : "c897de36-02fd-421c-837e-3263f6221310"
+          },
+          "sourceId" : "13",
+          "tags" : "Relationship",
+          "url" : "http://pay.beeline.ru/"
+        }, {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "18",
+          "id" : "20",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ext_rel_2"
+          },
+          "sourceId" : "13",
+          "tags" : "Relationship,balanced",
+          "technology" : "WebSocket"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "5",
+          "id" : "29",
+          "properties" : {
+            "structurizr.dsl.identifier" : "8e256fa8-7261-4c76-b7e4-09b2445a1236"
+          },
+          "sourceId" : "13",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTPS tcp/443"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "4",
+          "id" : "30",
+          "linkedRelationshipId" : "29",
+          "sourceId" : "13",
+          "technology" : "REST/HTTPS tcp/443"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "6",
+          "id" : "31",
+          "properties" : {
+            "structurizr.dsl.identifier" : "c5a6499a-9727-4bd2-ab4b-9c966455b27c"
+          },
+          "sourceId" : "13",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTPS tcp/443"
+        }, {
+          "description" : "Авторизация/аутентификация",
+          "destinationId" : "7",
+          "id" : "32",
+          "properties" : {
+            "structurizr.dsl.identifier" : "e8e871f7-785c-4095-aa92-5ec4cb76d9da"
+          },
+          "sourceId" : "13",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTPS tcp/443"
+        } ],
+        "tags" : "Element,Container,WebBrowser,ClientApp",
+        "technology" : "Web Browser"
+      }, {
+        "description" : "Приложение для осуществления заказа услуги и контроля передвижения",
+        "documentation" : { },
+        "group" : "API клиента",
+        "id" : "17",
+        "name" : "Backend мобильного приложения клиента",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.client_mobile_app_backend"
+        },
+        "relationships" : [ {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "33",
+          "id" : "34",
+          "properties" : {
+            "structurizr.dsl.identifier" : "bpm_rel_1"
+          },
+          "sourceId" : "17",
+          "tags" : "Relationship,balanced",
+          "technology" : "REST/HTTP :80"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "GoLang"
+      }, {
+        "description" : "Приложение для осуществления заказа услуги и контроля передвижения",
+        "documentation" : { },
+        "group" : "API клиента",
+        "id" : "18",
+        "name" : "Backend веб приложения клиента",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.client_web_app_backend"
+        },
+        "relationships" : [ {
+          "description" : "Получение данных/ нотификаций/ выполнение запросов",
+          "destinationId" : "33",
+          "id" : "35",
+          "properties" : {
+            "structurizr.dsl.identifier" : "bpm_rel_2"
+          },
+          "sourceId" : "18",
+          "tags" : "Relationship,balanced",
+          "technology" : "REST/HTTP :80"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "GoLang"
+      }, {
+        "description" : "Реализация сценариев трэкинга",
+        "documentation" : { },
+        "id" : "33",
+        "name" : "BPM",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.bpm"
+        },
+        "relationships" : [ {
+          "description" : "Запрос данных по геопозиции детей",
+          "destinationId" : "9",
+          "id" : "36",
+          "properties" : {
+            "structurizr.dsl.identifier" : "655cf2aa-a027-419a-9d36-d61bdf178055"
+          },
+          "sourceId" : "33",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Запрос баланса/осуществление платежа",
+          "destinationId" : "39",
+          "id" : "51",
+          "properties" : {
+            "structurizr.dsl.identifier" : "8b371e3b-6f16-45f2-a69e-9709c7626334"
+          },
+          "sourceId" : "33",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Запрос баланса/осуществление платежа",
+          "destinationId" : "38",
+          "id" : "52",
+          "linkedRelationshipId" : "51",
+          "sourceId" : "33",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Запрос данных о свободных дронах/Резервация",
+          "destinationId" : "54",
+          "id" : "57",
+          "properties" : {
+            "structurizr.dsl.identifier" : "ef423c00-8c04-413d-b0aa-1a7cbb477185"
+          },
+          "sourceId" : "33",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTP :80",
+          "url" : "http://somehost/index.yml"
+        }, {
+          "description" : "Запрос данных о свободных дронах/Резервация",
+          "destinationId" : "53",
+          "id" : "58",
+          "linkedRelationshipId" : "57",
+          "sourceId" : "33",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Запрос данных о клиенте и его детях",
+          "destinationId" : "60",
+          "id" : "67",
+          "properties" : {
+            "structurizr.dsl.identifier" : "d740f0b2-0a50-495c-978e-2169b2cf1165"
+          },
+          "sourceId" : "33",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Запрос данных о клиенте и его детях",
+          "destinationId" : "59",
+          "id" : "68",
+          "linkedRelationshipId" : "67",
+          "sourceId" : "33",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Управление дроном",
+          "destinationId" : "70",
+          "id" : "106",
+          "properties" : {
+            "structurizr.dsl.identifier" : "t_rel_2"
+          },
+          "sourceId" : "33",
+          "tags" : "Relationship",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Управление дроном",
+          "destinationId" : "69",
+          "id" : "107",
+          "linkedRelationshipId" : "106",
+          "sourceId" : "33",
+          "technology" : "REST/HTTP :80"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Camunda"
+      }, {
+        "components" : [ {
+          "description" : "Интерфейс для работы с подписками",
+          "documentation" : { },
+          "id" : "39",
+          "name" : "API",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.billing.billing_facade"
+          },
+          "relationships" : [ {
+            "description" : "запрос остатка баланса",
+            "destinationId" : "40",
+            "id" : "44",
+            "properties" : {
+              "structurizr.dsl.identifier" : "ee84ef9e-7f0a-4f57-b82f-abc2c223e0c3"
+            },
+            "sourceId" : "39",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "списание баланса",
+            "destinationId" : "40",
+            "id" : "45",
+            "properties" : {
+              "structurizr.dsl.identifier" : "e878f5a4-aa97-4290-9676-a8d5382a89d3"
+            },
+            "sourceId" : "39",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "пополнение баланса",
+            "destinationId" : "40",
+            "id" : "46",
+            "properties" : {
+              "structurizr.dsl.identifier" : "e03168b3-f50b-4596-822c-170862ad4627"
+            },
+            "sourceId" : "39",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "GoLang"
+        }, {
+          "description" : "Информация о балансах",
+          "documentation" : { },
+          "id" : "40",
+          "name" : "Subscription Database",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.billing.billing_database"
+          },
+          "tags" : "Element,Component,Database",
+          "technology" : "PostgreSQL"
+        }, {
+          "description" : "Сервис учета использования дронов",
+          "documentation" : { },
+          "id" : "41",
+          "name" : "Controler",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.billing.billing_controller"
+          },
+          "relationships" : [ {
+            "description" : "списание баланса",
+            "destinationId" : "40",
+            "id" : "50",
+            "properties" : {
+              "structurizr.dsl.identifier" : "75ede64f-8d54-4563-b2a8-52082edd7e77"
+            },
+            "sourceId" : "41",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Информирование об исчерпании средств на подписке",
+            "destinationId" : "70",
+            "id" : "91",
+            "properties" : {
+              "structurizr.dsl.identifier" : "t_rel_1"
+            },
+            "sourceId" : "41",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Информирование об исчерпании средств на подписке",
+            "destinationId" : "69",
+            "id" : "92",
+            "linkedRelationshipId" : "91",
+            "sourceId" : "41"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "GoLang"
+        }, {
+          "description" : "Брокер для учета использования дронов",
+          "documentation" : { },
+          "id" : "42",
+          "name" : "Брокер",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.billing.billing_queue"
+          },
+          "relationships" : [ {
+            "description" : "учет использования дрона",
+            "destinationId" : "41",
+            "id" : "43",
+            "properties" : {
+              "structurizr.dsl.identifier" : "f6e3078e-cf17-4793-802c-cbb82849a6c8"
+            },
+            "sourceId" : "42",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Element,Component,Queue",
+          "technology" : "RabbitMQ/MQTT"
+        } ],
+        "description" : "Прием оплат и контроль расходов",
+        "documentation" : { },
+        "group" : "Доменные сервисы",
+        "id" : "38",
+        "name" : "Billing",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.billing"
+        },
+        "relationships" : [ {
+          "description" : "Информирование об исчерпании средств на подписке",
+          "destinationId" : "70",
+          "id" : "93",
+          "linkedRelationshipId" : "91",
+          "sourceId" : "38"
+        }, {
+          "description" : "Информирование об исчерпании средств на подписке",
+          "destinationId" : "69",
+          "id" : "94",
+          "linkedRelationshipId" : "91",
+          "sourceId" : "38"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "GoLang"
+      }, {
+        "components" : [ {
+          "description" : "API учета информации о дронах",
+          "documentation" : { },
+          "id" : "54",
+          "name" : "API",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.inventory.inventory_facade"
+          },
+          "relationships" : [ {
+            "description" : "Запрос и обновление информации о дронах",
+            "destinationId" : "55",
+            "id" : "56",
+            "properties" : {
+              "structurizr.dsl.identifier" : "421057f6-9cee-4b42-87c1-694bf2d781ce"
+            },
+            "sourceId" : "54",
+            "tags" : "Relationship",
+            "technology" : "TCP :5453"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "Golang"
+        }, {
+          "description" : "Учет информации о дронах",
+          "documentation" : { },
+          "id" : "55",
+          "name" : "Реестр дронов",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.inventory.inventory_database"
+          },
+          "tags" : "Element,Component,Database",
+          "technology" : "PosthreSQL"
+        } ],
+        "description" : "Учет дронов",
+        "documentation" : { },
+        "group" : "Доменные сервисы",
+        "id" : "53",
+        "name" : "Inventory",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.inventory"
+        },
+        "tags" : "Element,Container",
+        "technology" : "GoLang"
+      }, {
+        "components" : [ {
+          "description" : "Интерфейс для работы с клиентом",
+          "documentation" : { },
+          "id" : "60",
+          "name" : "API",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.crm.crm_facade"
+          },
+          "relationships" : [ {
+            "description" : "запрос/изменение данных о пользователях",
+            "destinationId" : "61",
+            "id" : "62",
+            "properties" : {
+              "structurizr.dsl.identifier" : "9aaca6fd-4d5f-4462-aeb9-d9e9a515ee50"
+            },
+            "sourceId" : "60",
+            "tags" : "Relationship",
+            "technology" : "TCP :5432"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "Golang"
+        }, {
+          "description" : "Информация о клиентах",
+          "documentation" : { },
+          "id" : "61",
+          "name" : "Client Database",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.crm.crm_database"
+          },
+          "tags" : "Element,Component,Database",
+          "technology" : "PostgreSQL"
+        } ],
+        "description" : "Учет пользователей",
+        "documentation" : { },
+        "group" : "Доменные сервисы",
+        "id" : "59",
+        "name" : "Clients",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.crm"
+        },
+        "tags" : "Element,Container",
+        "technology" : "GoLang"
+      }, {
+        "components" : [ {
+          "description" : "Интерфейс для работы с дронами",
+          "documentation" : { },
+          "id" : "70",
+          "name" : "API",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.tracker.tracker_facade"
+          },
+          "relationships" : [ {
+            "description" : "Запрос данных о статусе дрона",
+            "destinationId" : "71",
+            "id" : "74",
+            "properties" : {
+              "structurizr.dsl.identifier" : "f281de2e-3b31-40d6-8bb8-693ed0fe5c75"
+            },
+            "sourceId" : "70",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Управление дроном",
+            "destinationId" : "73",
+            "id" : "75",
+            "properties" : {
+              "structurizr.dsl.identifier" : "e0bed925-c548-4197-a6b3-c60662dbf4b0"
+            },
+            "sourceId" : "70",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "GoLang"
+        }, {
+          "description" : "Информация о позиции и данных дронов",
+          "documentation" : { },
+          "id" : "71",
+          "name" : "Данные дронов",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.tracker.tracker_status"
+          },
+          "tags" : "Element,Component,Database",
+          "technology" : "Redis"
+        }, {
+          "description" : "Брокер для взаимодействия с дронами",
+          "documentation" : { },
+          "id" : "72",
+          "name" : "Брокер",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.tracker.tracker_queue"
+          },
+          "relationships" : [ {
+            "description" : "Команды управления",
+            "destinationId" : "8",
+            "id" : "95",
+            "properties" : {
+              "structurizr.dsl.identifier" : "20a4253b-d9cb-4f63-a936-02579a866351"
+            },
+            "sourceId" : "72",
+            "tags" : "Relationship",
+            "technology" : "MQTT :1883"
+          }, {
+            "description" : "Телеметрия",
+            "destinationId" : "73",
+            "id" : "98",
+            "properties" : {
+              "structurizr.dsl.identifier" : "e8ed80ab-128a-4092-b47b-f9c4f0e40caf"
+            },
+            "sourceId" : "72",
+            "tags" : "Relationship",
+            "technology" : "MQTT :1883"
+          }, {
+            "description" : "События безопасности",
+            "destinationId" : "73",
+            "id" : "99",
+            "properties" : {
+              "structurizr.dsl.identifier" : "e92c3dce-b396-430c-89be-13d92fc91253"
+            },
+            "sourceId" : "72",
+            "tags" : "Relationship",
+            "technology" : "MQTT :1883"
+          } ],
+          "tags" : "Element,Component,Queue",
+          "technology" : "RabbitMQ/MQTT"
+        }, {
+          "description" : "Сервис управления дронами",
+          "documentation" : { },
+          "id" : "73",
+          "name" : "Controler",
+          "properties" : {
+            "structurizr.dsl.identifier" : "guard_system.tracker.tracker_controler"
+          },
+          "relationships" : [ {
+            "description" : "Команды управления",
+            "destinationId" : "72",
+            "id" : "76",
+            "properties" : {
+              "structurizr.dsl.identifier" : "d25ddf20-c119-4847-9c37-a8404e2742c5"
+            },
+            "sourceId" : "73",
+            "tags" : "Relationship",
+            "technology" : "MQTT :1883"
+          }, {
+            "description" : "Обновление актуального статуса дронов",
+            "destinationId" : "71",
+            "id" : "77",
+            "properties" : {
+              "structurizr.dsl.identifier" : "14240039-78be-42cc-99c8-d6854724132f"
+            },
+            "sourceId" : "73",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Данные об использовании дрона",
+            "destinationId" : "42",
+            "id" : "78",
+            "properties" : {
+              "structurizr.dsl.identifier" : "b99f3a4d-440a-401f-8dd1-b3d1debed632"
+            },
+            "sourceId" : "73",
+            "tags" : "Relationship",
+            "technology" : "MQTT :1883"
+          }, {
+            "description" : "Данные об использовании дрона",
+            "destinationId" : "38",
+            "id" : "79",
+            "linkedRelationshipId" : "78",
+            "sourceId" : "73",
+            "technology" : "MQTT :1883"
+          }, {
+            "description" : "запрос остатка баланса",
+            "destinationId" : "39",
+            "id" : "82",
+            "properties" : {
+              "structurizr.dsl.identifier" : "f50044c6-a2b0-40be-ba4c-36f75f030538"
+            },
+            "sourceId" : "73",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Обновдение информации о дронах",
+            "destinationId" : "54",
+            "id" : "84",
+            "properties" : {
+              "structurizr.dsl.identifier" : "c3dd2147-483e-42d7-823b-98768f66f27d"
+            },
+            "sourceId" : "73",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Обновдение информации о дронах",
+            "destinationId" : "53",
+            "id" : "85",
+            "linkedRelationshipId" : "84",
+            "sourceId" : "73",
+            "technology" : "REST/HTTP :80"
+          }, {
+            "description" : "Вызов службы охраны на проишествие",
+            "destinationId" : "2",
+            "id" : "88",
+            "properties" : {
+              "structurizr.dsl.identifier" : "a72c2b60-c9c7-4216-ab93-8c2e68e4477c"
+            },
+            "sourceId" : "73",
+            "tags" : "Relationship",
+            "technology" : "REST/HTTP :80"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "GoLang"
+        } ],
+        "description" : "Подсистема трэкинга дронов в реальном времени",
+        "documentation" : { },
+        "group" : "Доменные сервисы",
+        "id" : "69",
+        "name" : "Tracker",
+        "properties" : {
+          "structurizr.dsl.identifier" : "guard_system.tracker"
+        },
+        "relationships" : [ {
+          "description" : "Данные об использовании дрона",
+          "destinationId" : "42",
+          "id" : "80",
+          "linkedRelationshipId" : "78",
+          "sourceId" : "69",
+          "technology" : "MQTT :1883"
+        }, {
+          "description" : "Данные об использовании дрона",
+          "destinationId" : "38",
+          "id" : "81",
+          "linkedRelationshipId" : "78",
+          "sourceId" : "69",
+          "technology" : "MQTT :1883"
+        }, {
+          "description" : "запрос остатка баланса",
+          "destinationId" : "39",
+          "id" : "83",
+          "linkedRelationshipId" : "82",
+          "sourceId" : "69",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Обновдение информации о дронах",
+          "destinationId" : "54",
+          "id" : "86",
+          "linkedRelationshipId" : "84",
+          "sourceId" : "69",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Обновдение информации о дронах",
+          "destinationId" : "53",
+          "id" : "87",
+          "linkedRelationshipId" : "84",
+          "sourceId" : "69",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Вызов службы охраны на проишествие",
+          "destinationId" : "2",
+          "id" : "89",
+          "linkedRelationshipId" : "88",
+          "sourceId" : "69",
+          "technology" : "REST/HTTP :80"
+        }, {
+          "description" : "Команды управления",
+          "destinationId" : "8",
+          "id" : "96",
+          "linkedRelationshipId" : "95",
+          "sourceId" : "69",
+          "technology" : "MQTT :1883"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "GoLang"
+      } ],
+      "documentation" : { },
+      "id" : "11",
+      "location" : "Unspecified",
+      "name" : "Мобильный телохранитель",
+      "properties" : {
+        "structurizr.dsl.identifier" : "guard_system"
+      },
+      "relationships" : [ {
+        "description" : "Оплата",
+        "destinationId" : "1",
+        "id" : "15",
+        "linkedRelationshipId" : "14",
+        "sourceId" : "11"
+      }, {
+        "description" : "Авторизация/аутентификация",
+        "destinationId" : "5",
+        "id" : "23",
+        "linkedRelationshipId" : "21",
+        "sourceId" : "11",
+        "technology" : "REST/HTTPS tcp/443"
+      }, {
+        "description" : "Авторизация/аутентификация",
+        "destinationId" : "4",
+        "id" : "24",
+        "linkedRelationshipId" : "21",
+        "sourceId" : "11",
+        "technology" : "REST/HTTPS tcp/443"
+      }, {
+        "description" : "Авторизация/аутентификация",
+        "destinationId" : "6",
+        "id" : "26",
+        "linkedRelationshipId" : "25",
+        "sourceId" : "11",
+        "technology" : "REST/HTTPS tcp/443"
+      }, {
+        "description" : "Авторизация/аутентификация",
+        "destinationId" : "7",
+        "id" : "28",
+        "linkedRelationshipId" : "27",
+        "sourceId" : "11",
+        "technology" : "REST/HTTPS tcp/443"
+      }, {
+        "description" : "Запрос данных по геопозиции детей",
+        "destinationId" : "9",
+        "id" : "37",
+        "linkedRelationshipId" : "36",
+        "sourceId" : "11",
+        "technology" : "REST/HTTP :80"
+      }, {
+        "description" : "Вызов службы охраны на проишествие",
+        "destinationId" : "2",
+        "id" : "90",
+        "linkedRelationshipId" : "88",
+        "sourceId" : "11",
+        "technology" : "REST/HTTP :80"
+      }, {
+        "description" : "Команды управления",
+        "destinationId" : "8",
+        "id" : "97",
+        "linkedRelationshipId" : "95",
+        "sourceId" : "11",
+        "technology" : "MQTT :1883"
+      } ],
+      "tags" : "Element,Software System,rel:1.1.0,rel:2.0",
+      "url" : "https://www.yandex.ru/"
+    } ]
+  },
+  "name" : "Мобильный телохранитель",
+  "properties" : {
+    "structurizr.dsl" : "d29ya3NwYWNlIHsKICAgIG5hbWUgItCc0L7QsdC40LvRjNC90YvQuSDRgtC10LvQvtGF0YDQsNC90LjRgtC10LvRjCIKICAgIGRlc2NyaXB0aW9uICLQtNC10LzQvtC90YHRgtGA0LDRhtC40L7QvdC90YvQuSDQv9GA0LjQvNC10YAg0LTQu9GPINC/0L7QutCw0LfQsCDRgtC10YXQvdC40Log0LLQtdC00LXQvdC40Y8g0L/RgNC+0LXQutGC0L3QvtC5INC00L7QutGD0LzQtdC90YLQsNGG0LjQuNGLIgogICAgIWFkcnMgZGVjaXNpb25zCiAgICAhZG9jcyBkb2N1bWVudGF0aW9uCiAgICAhaWRlbnRpZmllcnMgaGllcmFyY2hpY2FsCgogICAgbW9kZWwgewogICAgICAgICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICAgICAgICAgc3RydWN0dXJpenIuZ3JvdXBTZXBhcmF0b3IgIi8iCiAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgZ3JvdXAgIkJTUyBMYW5kc2NhcGUiIHsKICAgICAgICAgICAgcGF5bWVudF9zeXN0ZW0gPSBzb2Z0d2FyZVN5c3RlbSAi0JLQvdC10YjQvdGP0Y8g0L/Qu9Cw0YLQtdC20L3QsNGPINGB0LjRgdGC0LXQvNCwIiB7CiAgICAgICAgICAgICAgICBkZXNjcmlwdGlvbiAi0KHQuNGB0YLQtdC80LAg0YDQtdCz0LjRgdGC0YDQsNGG0LjQuCDQv9C70LDRgtC10LbQtdC5INC/0L4g0LHQsNC90LrQvtCy0YHQutC40Lwg0LrQsNGA0YLQsNC8LCBRUiDQutC+0LTQsNC8INC4INGH0LXRgNC10LcgU1BCIgogICAgICAgICAgICAgICAgdGFncyAiRXh0ZXJuYWxTeXN0ZW0iCiAgICAgICAgICAgIH0gCiAgICAgICAgfQogICAgICAgIAogICAgICAgIGdyb3VwICJJbmZyYXN0cnVjdHVyZSBwbGF0Zm9ybXMiIHsKICAgICAgICAgICAgc2VjdXJpdHkgPSBzb2Z0d2FyZVN5c3RlbSAi0KfQntCfIiB7CiAgICAgICAgICAgICAgICBkZXNjcmlwdGlvbiAi0JLQvdC10YjQvdC10LUg0L/QsNGA0YLQvdC10YDRgdC60L7QtSDQvtGF0YDQsNC90L3QvtC1INCw0LPQtdC90YHRgtCy0L4iCiAgICAgICAgICAgICAgICB0YWdzICJFeHRlcm5hbFN5c3RlbSIgCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZmlyZXdhbGwgPSBzb2Z0d2FyZVN5c3RlbSAiRmlyZVdhbGwiIHsKICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICLQn9GA0L7Qs9GA0LDQvNC80L3Ri9C5INC80LXQttGB0LXRgtC10LLQvtC5INGN0LrRgNCw0L0iCiAgICAgICAgICAgICAgICB0YWdzICJFeHRlcm5hbFN5c3RlbSIKICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgICAgICBncm91cCAiSURQIiB7CiAgICAgICAgICAgICAgICBzc28gPSBzb2Z0d2FyZVN5c3RlbSAiU2luZ2xlIFNpZ24gT24iIHsKICAgICAgICAgICAgICAgICAgICBkZXNjcmlwdGlvbiAi0JDRg9GC0LXQvdGC0LjRhNC40LrQsNGG0LjRjyDQuCDQsNCy0YLQvtGA0LjQt9Cw0YbQuNGPINC/0L7Qu9GM0LfQvtCy0LDRgtC10LvQtdC5IgogICAgICAgIAogICAgICAgICAgICAgICAgICAgIGF1dGhvcml6YXRpb25fcGFzc3dvcmQgPSBjb250YWluZXIgItCQ0LLRgtC+0YDQuNC30LDRhtC40Y8g0L/QviDQu9C+0LPQuNC90YMg0Lgg0L/QsNGA0L7Qu9GOIgogICAgICAgICAgICAgICAgICAgIGF1dGhvcml6YXRpb25fbW9iaWxlX2lkID0gY29udGFpbmVyICLQkNCy0YLQvtGA0LjQt9Cw0YbQuNGPIE1vYmlsZSBJRCIKICAgICAgICAgICAgICAgICAgICBhdXRob3JpemF0aW9uX29uZV90aW1lID0gY29udGFpbmVyICLQkNCy0YLQvtGA0LjQt9Cw0YbQuNGPINC/0L4g0YDQsNC30L7QstC+0LzRgyDQv9Cw0YDQvtC70Y4iCiAgICAgICAgICAgICAgICB9IAogICAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIAogICAgICAgIGdyb3VwICJPU1MgTGFuZHNjYXBlIiB7CiAgICAgICAgICAgIGRyb25lID0gc29mdHdhcmVTeXN0ZW0gItCU0YDQvtC9InsKICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICLQkNGN0YDQvtC80L7QsdC40LvRjNC90LDRjyDQv9C70LDRgtGE0L7RgNC80LAg0LTQu9GPINC90LDQsdC70Y7QtNC10L3QuNGPINC30LAg0L/QvtC70YzQt9C+0LLQsNGC0LXQu9GP0LzQuCIgCiAgICAgICAgICAgICAgICB0YWdzICJFeHRlcm5hbFN5c3RlbSIKICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgICAgICBtbGMgPSBzb2Z0d2FyZVN5c3RlbSAiTUxDInsKICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICJNb2JpbGUgTG9jYXRpb24gQ2VudHJlIgogICAgICAgICAgICAgICAgdGFncyAiRXh0ZXJuYWxzeXN0ZW0iCiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICAgICAgCiAgICAgICAgCiAgICAgICAgICAgICAgICB1c2VyID0gcGVyc29uICLQn9C+0LvRjNC30L7QstCw0YLQtdC70YwiICLQl9Cw0LrQsNC30YfQuNC6INGD0YHQu9GD0LPQuCwg0L7RgdGD0YnQtdGB0YLQstC70Y/RjtGJ0LjQuSDQvdCw0LHQu9GO0LTQtdC90LjQtSDQt9CwINGA0LXQsdC10L3QutC+0LwiewogICAgICAgICAgICAgICAgICAgIHRhZ3MgIkN1c3RvbWVyIiAicmVsOjEuMS4wIgogICAgICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgICAgICAgICAgZ3VhcmRfc3lzdGVtID0gc29mdHdhcmVTeXN0ZW0gItCc0L7QsdC40LvRjNC90YvQuSDRgtC10LvQvtGF0YDQsNC90LjRgtC10LvRjCIgewogICAgICAgICAgICAgICAgICAgIHVybCAiaHR0cHM6Ly93d3cueWFuZGV4LnJ1LyIKICAgICAgICAKICAgICAgICAgICAgICAgICAgICB0YWdzICJyZWw6MS4xLjAiICJyZWw6Mi4wIgogICAgICAgICAgICAgICAgICAgICMg0JrQu9C40LXQvdGC0YHQutC40LUg0L/RgNC40LvQvtC20LXQvdC40Y8gCiAgICAgICAgICAgICAgICAgICAgZ3JvdXAgItCa0LvQuNC10L3RgtGB0LrQuNC1INC/0YDQuNC70L7QttC10L3QuNGPIiB7CiAgICAgICAgICAgICAgICAgICAgICAgIGNsaWVudF9tb2JpbGVfYXBwICAgPSAgY29udGFpbmVyICLQnNC+0LHQuNC70YzQvdC+0LUg0L/RgNC40LvQvtC20LXQvdC40LUg0LrQu9C40LXQvdGC0LAiICLQn9GA0LjQu9C+0LbQtdC90LjQtSDQtNC70Y8g0L7RgdGD0YnQtdGB0YLQstC70LXQvdC40Y8g0LfQsNC60LDQt9CwINGD0YHQu9GD0LPQuCDQuCDQutC+0L3RgtGA0L7Qu9GPINC/0LXRgNC10LTQstC40LbQtdC90LjRjyIgICJBbmRyb2lkL2lPUyBhcHAiICJNb2JpbGVBcHAiCiAgICAgICAgICAgICAgICAgICAgICAgIGNsaWVudF93ZWJfYXBwICAgICAgPSAgY29udGFpbmVyICLQktC10LEg0L/RgNC40LvQvtC20LXQvdC40LUg0LrQu9C40LXQvdGC0LAiIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICLQn9GA0LjQu9C+0LbQtdC90LjQtSDQtNC70Y8g0L7RgdGD0YnQtdGB0YLQstC70LXQvdC40Y8g0LfQsNC60LDQt9CwINGD0YHQu9GD0LPQuCDQuCDQutC+0L3RgtGA0L7Qu9GPINC/0LXRgNC10LTQstC40LbQtdC90LjRjyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRlY2hub2xvZ3kgIldlYiBCcm93c2VyIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgdGFncyAiV2ViQnJvd3NlciIgIkNsaWVudEFwcCIKICAgICAgICAgICAgICAgICAgICAgICAgfSAgIAogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAKICAgICAgICAgICAgICAgICAgICBjbGllbnRfbW9iaWxlX2FwcCAtPiBwYXltZW50X3N5c3RlbSAi0J7Qv9C70LDRgtCwIiB7CiAgICAgICAgICAgICAgICAgICAgICAgIHVybCBodHRwOi8vcGF5LmJlZWxpbmUucnUvCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgIGNsaWVudF93ZWJfYXBwIC0+IHBheW1lbnRfc3lzdGVtICLQntC/0LvQsNGC0LAiIHsKICAgICAgICAgICAgICAgICAgICAgICAgdXJsIGh0dHA6Ly9wYXkuYmVlbGluZS5ydS8KICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgIyDQodC70L7QuSBiYWNrZW5kINC00LvRjyDQutC70LjQtdC90YLRgdC60LjRhSDQv9GA0LjQu9C+0LbQtdC90LjQuQogICAgICAgIAogICAgICAgICAgICAgICAgICAgIGdyb3VwICJBUEkg0LrQu9C40LXQvdGC0LAiIHsKICAgICAgICAgICAgICAgICAgICAgICAgY2xpZW50X21vYmlsZV9hcHBfYmFja2VuZCAgPSAgY29udGFpbmVyICJCYWNrZW5kINC80L7QsdC40LvRjNC90L7Qs9C+INC/0YDQuNC70L7QttC10L3QuNGPINC60LvQuNC10L3RgtCwIiAi0J/RgNC40LvQvtC20LXQvdC40LUg0LTQu9GPINC+0YHRg9GJ0LXRgdGC0LLQu9C10L3QuNGPINC30LDQutCw0LfQsCDRg9GB0LvRg9Cz0Lgg0Lgg0LrQvtC90YLRgNC+0LvRjyDQv9C10YDQtdC00LLQuNC20LXQvdC40Y8iICAiR29MYW5nIiAiQ29udGFpbmVyIgogICAgICAgICAgICAgICAgICAgICAgICBjbGllbnRfd2ViX2FwcF9iYWNrZW5kICAgICA9ICBjb250YWluZXIgIkJhY2tlbmQg0LLQtdCxINC/0YDQuNC70L7QttC10L3QuNGPINC60LvQuNC10L3RgtCwIiAi0J/RgNC40LvQvtC20LXQvdC40LUg0LTQu9GPINC+0YHRg9GJ0LXRgdGC0LLQu9C10L3QuNGPINC30LDQutCw0LfQsCDRg9GB0LvRg9Cz0Lgg0Lgg0LrQvtC90YLRgNC+0LvRjyDQv9C10YDQtdC00LLQuNC20LXQvdC40Y8iICAiR29MYW5nIiAiQ29udGFpbmVyIgogICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgZXh0X3JlbF8xID0gY2xpZW50X21vYmlsZV9hcHAgLT4gY2xpZW50X21vYmlsZV9hcHBfYmFja2VuZCAi0J/QvtC70YPRh9C10L3QuNC1INC00LDQvdC90YvRhS8g0L3QvtGC0LjRhNC40LrQsNGG0LjQuS8g0LLRi9C/0L7Qu9C90LXQvdC40LUg0LfQsNC/0YDQvtGB0L7QsiIgIldlYlNvY2tldCIgImJhbGFuY2VkIgogICAgICAgICAgICAgICAgICAgIGV4dF9yZWxfMiA9IGNsaWVudF93ZWJfYXBwIC0+IGNsaWVudF93ZWJfYXBwX2JhY2tlbmQgItCf0L7Qu9GD0YfQtdC90LjQtSDQtNCw0L3QvdGL0YUvINC90L7RgtC40YTQuNC60LDRhtC40LkvINCy0YvQv9C+0LvQvdC10L3QuNC1INC30LDQv9GA0L7RgdC+0LIiICJXZWJTb2NrZXQiICJiYWxhbmNlZCIKICAgICAgICAKICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICBjbGllbnRfbW9iaWxlX2FwcCAtPiBzc28uYXV0aG9yaXphdGlvbl9wYXNzd29yZCAi0JDQstGC0L7RgNC40LfQsNGG0LjRjy/QsNGD0YLQtdC90YLQuNGE0LjQutCw0YbQuNGPIiAiUkVTVC9IVFRQUyB0Y3AvNDQzIgogICAgICAgICAgICAgICAgICAgIGNsaWVudF9tb2JpbGVfYXBwIC0+IHNzby5hdXRob3JpemF0aW9uX21vYmlsZV9pZCAi0JDQstGC0L7RgNC40LfQsNGG0LjRjy/QsNGD0YLQtdC90YLQuNGE0LjQutCw0YbQuNGPIiAiUkVTVC9IVFRQUyB0Y3AvNDQzIgogICAgICAgICAgICAgICAgICAgIGNsaWVudF9tb2JpbGVfYXBwIC0+IHNzby5hdXRob3JpemF0aW9uX29uZV90aW1lICLQkNCy0YLQvtGA0LjQt9Cw0YbQuNGPL9Cw0YPRgtC10L3RgtC40YTQuNC60LDRhtC40Y8iICJSRVNUL0hUVFBTIHRjcC80NDMiCiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgY2xpZW50X3dlYl9hcHAgLT4gc3NvLmF1dGhvcml6YXRpb25fcGFzc3dvcmQgItCQ0LLRgtC+0YDQuNC30LDRhtC40Y8v0LDRg9GC0LXQvdGC0LjRhNC40LrQsNGG0LjRjyIgIlJFU1QvSFRUUFMgdGNwLzQ0MyIKICAgICAgICAgICAgICAgICAgICBjbGllbnRfd2ViX2FwcCAtPiBzc28uYXV0aG9yaXphdGlvbl9tb2JpbGVfaWQgItCQ0LLRgtC+0YDQuNC30LDRhtC40Y8v0LDRg9GC0LXQvdGC0LjRhNC40LrQsNGG0LjRjyIgIlJFU1QvSFRUUFMgdGNwLzQ0MyIKICAgICAgICAgICAgICAgICAgICBjbGllbnRfd2ViX2FwcCAtPiBzc28uYXV0aG9yaXphdGlvbl9vbmVfdGltZSAi0JDQstGC0L7RgNC40LfQsNGG0LjRjy/QsNGD0YLQtdC90YLQuNGE0LjQutCw0YbQuNGPIiAiUkVTVC9IVFRQUyB0Y3AvNDQzIgogICAgICAgIAogICAgICAgICAgICAgICAgICAgIGJwbSA9IGNvbnRhaW5lciAiQlBNIiAi0KDQtdCw0LvQuNC30LDRhtC40Y8g0YHRhtC10L3QsNGA0LjQtdCyINGC0YDRjdC60LjQvdCz0LAiICJDYW11bmRhIgogICAgICAgIAogICAgICAgICAgICAgICAgICAgIGJwbV9yZWxfMSA9IGNsaWVudF9tb2JpbGVfYXBwX2JhY2tlbmQgLT4gYnBtICLQn9C+0LvRg9GH0LXQvdC40LUg0LTQsNC90L3Ri9GFLyDQvdC+0YLQuNGE0LjQutCw0YbQuNC5LyDQstGL0L/QvtC70L3QtdC90LjQtSDQt9Cw0L/RgNC+0YHQvtCyIiAiUkVTVC9IVFRQIDo4MCIgImJhbGFuY2VkIgogICAgICAgICAgICAgICAgICAgIGJwbV9yZWxfMiA9IGNsaWVudF93ZWJfYXBwX2JhY2tlbmQgLT4gIGJwbSAi0J/QvtC70YPRh9C10L3QuNC1INC00LDQvdC90YvRhS8g0L3QvtGC0LjRhNC40LrQsNGG0LjQuS8g0LLRi9C/0L7Qu9C90LXQvdC40LUg0LfQsNC/0YDQvtGB0L7QsiIgIlJFU1QvSFRUUCA6ODAiICJiYWxhbmNlZCIKICAgICAgICAKICAgICAgICAgICAgICAgICAgICBicG0gLT4gbWxjICLQl9Cw0L/RgNC+0YEg0LTQsNC90L3Ri9GFINC/0L4g0LPQtdC+0L/QvtC30LjRhtC40Lgg0LTQtdGC0LXQuSIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgZ3JvdXAgICLQlNC+0LzQtdC90L3Ri9C1INGB0LXRgNCy0LjRgdGLIiB7CiAgICAgICAgICAgICAgICAgICAgICAgIGJpbGxpbmcgICA9IGNvbnRhaW5lciAiQmlsbGluZyIgItCf0YDQuNC10Lwg0L7Qv9C70LDRgiDQuCDQutC+0L3RgtGA0L7Qu9GMINGA0LDRgdGF0L7QtNC+0LIiICJHb0xhbmciICJDb250YWluZXIiewogICAgICAgICAgICAgICAgICAgICAgICAgICAgYmlsbGluZ19mYWNhZGUgPSBjb21wb25lbnQgIkFQSSIgItCY0L3RgtC10YDRhNC10LnRgSDQtNC70Y8g0YDQsNCx0L7RgtGLINGBINC/0L7QtNC/0LjRgdC60LDQvNC4IiAiR29MYW5nIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYmlsbGluZ19kYXRhYmFzZSA9IGNvbXBvbmVudCAiU3Vic2NyaXB0aW9uIERhdGFiYXNlIiAi0JjQvdGE0L7RgNC80LDRhtC40Y8g0L4g0LHQsNC70LDQvdGB0LDRhSIgIlBvc3RncmVTUUwiICJEYXRhYmFzZSIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGJpbGxpbmdfY29udHJvbGxlciA9IGNvbXBvbmVudCAiQ29udHJvbGVyIiAi0KHQtdGA0LLQuNGBINGD0YfQtdGC0LAg0LjRgdC/0L7Qu9GM0LfQvtCy0LDQvdC40Y8g0LTRgNC+0L3QvtCyIiAiR29MYW5nIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYmlsbGluZ19xdWV1ZSAgPSBjb21wb25lbnQgItCR0YDQvtC60LXRgCIgItCR0YDQvtC60LXRgCDQtNC70Y8g0YPRh9C10YLQsCDQuNGB0L/QvtC70YzQt9C+0LLQsNC90LjRjyDQtNGA0L7QvdC+0LIiICJSYWJiaXRNUS9NUVRUIiAiUXVldWUiCiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBiaWxsaW5nX3F1ZXVlIC0+IGJpbGxpbmdfY29udHJvbGxlciAi0YPRh9C10YIg0LjRgdC/0L7Qu9GM0LfQvtCy0LDQvdC40Y8g0LTRgNC+0L3QsCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBiaWxsaW5nX2ZhY2FkZSAtPiBiaWxsaW5nX2RhdGFiYXNlICLQt9Cw0L/RgNC+0YEg0L7RgdGC0LDRgtC60LAg0LHQsNC70LDQvdGB0LAiICJSRVNUL0hUVFAgOjgwIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYmlsbGluZ19mYWNhZGUgLT4gYmlsbGluZ19kYXRhYmFzZSAi0YHQv9C40YHQsNC90LjQtSDQsdCw0LvQsNC90YHQsCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBiaWxsaW5nX2ZhY2FkZSAtPiBiaWxsaW5nX2RhdGFiYXNlICLQv9C+0L/QvtC70L3QtdC90LjQtSDQsdCw0LvQsNC90YHQsCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBwYXltZW50X3N5c3RlbSAtPiBiaWxsaW5nX2ZhY2FkZSAi0L/QvtC/0L7Qu9C90LXQvdC40LUg0LHQsNC70LDQvdGB0LAiICJSRVNUL0hUVFAgOjgwInsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB1cmwgaHR0cDovL3BheS5iZWVsaW5lLnJ1LwogICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICAgICAgYmlsbGluZ19jb250cm9sbGVyIC0+IGJpbGxpbmdfZGF0YWJhc2UgItGB0L/QuNGB0LDQvdC40LUg0LHQsNC70LDQvdGB0LAiICJSRVNUL0hUVFAgOjgwIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYnBtIC0+IGJpbGxpbmdfZmFjYWRlICLQl9Cw0L/RgNC+0YEg0LHQsNC70LDQvdGB0LAv0L7RgdGD0YnQtdGB0YLQstC70LXQvdC40LUg0L/Qu9Cw0YLQtdC20LAiICJSRVNUL0hUVFAgOjgwIgogICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgIGludmVudG9yeSA9IGNvbnRhaW5lciAiSW52ZW50b3J5IiAi0KPRh9C10YIg0LTRgNC+0L3QvtCyIiAiR29MYW5nIiAiQ29udGFpbmVyInsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGludmVudG9yeV9mYWNhZGUgPSBjb21wb25lbnQgIkFQSSIgIkFQSSDRg9GH0LXRgtCwINC40L3RhNC+0YDQvNCw0YbQuNC4INC+INC00YDQvtC90LDRhSIgIkdvbGFuZyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGludmVudG9yeV9kYXRhYmFzZSA9IGNvbXBvbmVudCAi0KDQtdC10YHRgtGAINC00YDQvtC90L7QsiIgItCj0YfQtdGCINC40L3RhNC+0YDQvNCw0YbQuNC4INC+INC00YDQvtC90LDRhSIgIlBvc3RocmVTUUwiICJEYXRhYmFzZSIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGludmVudG9yeV9mYWNhZGUgLT4gaW52ZW50b3J5X2RhdGFiYXNlICLQl9Cw0L/RgNC+0YEg0Lgg0L7QsdC90L7QstC70LXQvdC40LUg0LjQvdGE0L7RgNC80LDRhtC40Lgg0L4g0LTRgNC+0L3QsNGFIiAiVENQIDo1NDUzIgogICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgYnBtIC0+IGludmVudG9yeV9mYWNhZGUgItCX0LDQv9GA0L7RgSDQtNCw0L3QvdGL0YUg0L4g0YHQstC+0LHQvtC00L3Ri9GFINC00YDQvtC90LDRhS/QoNC10LfQtdGA0LLQsNGG0LjRjyIgIlJFU1QvSFRUUCA6ODAiIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB1cmwgaHR0cDovL3NvbWVob3N0L2luZGV4LnltbAogICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgIGNybSAgICAgICA9IGNvbnRhaW5lciAiQ2xpZW50cyIgItCj0YfQtdGCINC/0L7Qu9GM0LfQvtCy0LDRgtC10LvQtdC5IiAiR29MYW5nIiAiQ29udGFpbmVyInsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNybV9mYWNhZGUgPSBjb21wb25lbnQgIkFQSSIgItCY0L3RgtC10YDRhNC10LnRgSDQtNC70Y8g0YDQsNCx0L7RgtGLINGBINC60LvQuNC10L3RgtC+0LwiICJHb2xhbmciCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBjcm1fZGF0YWJhc2UgPSBjb21wb25lbnQgIkNsaWVudCBEYXRhYmFzZSIgItCY0L3RhNC+0YDQvNCw0YbQuNGPINC+INC60LvQuNC10L3RgtCw0YUiICJQb3N0Z3JlU1FMIiAiRGF0YWJhc2UiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBjcm1fZmFjYWRlIC0+IGNybV9kYXRhYmFzZSAi0LfQsNC/0YDQvtGBL9C40LfQvNC10L3QtdC90LjQtSDQtNCw0L3QvdGL0YUg0L4g0L/QvtC70YzQt9C+0LLQsNGC0LXQu9GP0YUiICJUQ1AgOjU0MzIiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBzc28gLT4gY3JtX2ZhY2FkZSAi0L/QvtC70YPRh9C10L3QuNC1INC/0YDQvtGE0LjQu9GPINC60LvQuNC10L3RgtCwINC/0L4gaWQiICJSRVNUL0hUVFAgOjgwIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgc3NvIC0+IGNybV9mYWNhZGUgItCw0YPQutGC0LXQvdGC0LjRhNC40LrQsNGG0LjRjyDQutC70LjQtdC90YLQsCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBicG0gLT4gY3JtX2ZhY2FkZSAi0JfQsNC/0YDQvtGBINC00LDQvdC90YvRhSDQviDQutC70LjQtdC90YLQtSDQuCDQtdCz0L4g0LTQtdGC0Y/RhSIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXIgICA9IGNvbnRhaW5lciAiVHJhY2tlciIgItCf0L7QtNGB0LjRgdGC0LXQvNCwINGC0YDRjdC60LjQvdCz0LAg0LTRgNC+0L3QvtCyINCyINGA0LXQsNC70YzQvdC+0Lwg0LLRgNC10LzQtdC90LgiICJHb0xhbmciICJDb250YWluZXIiewogICAgICAgICAgICAgICAgICAgICAgICAgICAgdHJhY2tlcl9mYWNhZGUgPSBjb21wb25lbnQgIkFQSSIgItCY0L3RgtC10YDRhNC10LnRgSDQtNC70Y8g0YDQsNCx0L7RgtGLINGBINC00YDQvtC90LDQvNC4IiAiR29MYW5nIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgdHJhY2tlcl9zdGF0dXMgPSBjb21wb25lbnQgItCU0LDQvdC90YvQtSDQtNGA0L7QvdC+0LIiICLQmNC90YTQvtGA0LzQsNGG0LjRjyDQviDQv9C+0LfQuNGG0LjQuCDQuCDQtNCw0L3QvdGL0YUg0LTRgNC+0L3QvtCyIiAiUmVkaXMiICJEYXRhYmFzZSIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfcXVldWUgID0gY29tcG9uZW50ICLQkdGA0L7QutC10YAiICLQkdGA0L7QutC10YAg0LTQu9GPINCy0LfQsNC40LzQvtC00LXQudGB0YLQstC40Y8g0YEg0LTRgNC+0L3QsNC80LgiICJSYWJiaXRNUS9NUVRUIiAiUXVldWUiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0cmFja2VyX2NvbnRyb2xlciA9IGNvbXBvbmVudCAiQ29udHJvbGVyIiAi0KHQtdGA0LLQuNGBINGD0L/RgNCw0LLQu9C10L3QuNGPINC00YDQvtC90LDQvNC4IiAiR29MYW5nIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgdHJhY2tlcl9mYWNhZGUgLT4gdHJhY2tlcl9zdGF0dXMgItCX0LDQv9GA0L7RgSDQtNCw0L3QvdGL0YUg0L4g0YHRgtCw0YLRg9GB0LUg0LTRgNC+0L3QsCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0cmFja2VyX2ZhY2FkZSAtPiB0cmFja2VyX2NvbnRyb2xlciAi0KPQv9GA0LDQstC70LXQvdC40LUg0LTRgNC+0L3QvtC8IiAiUkVTVC9IVFRQIDo4MCIKICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfY29udHJvbGVyIC0+IHRyYWNrZXJfcXVldWUgItCa0L7QvNCw0L3QtNGLINGD0L/RgNCw0LLQu9C10L3QuNGPIiAiTVFUVCA6MTg4MyIgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0cmFja2VyX2NvbnRyb2xlciAtPiB0cmFja2VyX3N0YXR1cyAi0J7QsdC90L7QstC70LXQvdC40LUg0LDQutGC0YPQsNC70YzQvdC+0LPQviDRgdGC0LDRgtGD0YHQsCDQtNGA0L7QvdC+0LIiICJSRVNUL0hUVFAgOjgwIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgdHJhY2tlcl9jb250cm9sZXIgLT4gYmlsbGluZy5iaWxsaW5nX3F1ZXVlICLQlNCw0L3QvdGL0LUg0L7QsSDQuNGB0L/QvtC70YzQt9C+0LLQsNC90LjQuCDQtNGA0L7QvdCwIiAiTVFUVCA6MTg4MyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfY29udHJvbGVyIC0+IGJpbGxpbmcuYmlsbGluZ19mYWNhZGUgItC30LDQv9GA0L7RgSDQvtGB0YLQsNGC0LrQsCDQsdCw0LvQsNC90YHQsCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0cmFja2VyX2NvbnRyb2xlciAtPiBpbnZlbnRvcnkuaW52ZW50b3J5X2ZhY2FkZSAi0J7QsdC90L7QstC00LXQvdC40LUg0LjQvdGE0L7RgNC80LDRhtC40Lgg0L4g0LTRgNC+0L3QsNGFIiAiUkVTVC9IVFRQIDo4MCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfY29udHJvbGVyIC0+IHNlY3VyaXR5ICLQktGL0LfQvtCyINGB0LvRg9C20LHRiyDQvtGF0YDQsNC90Ysg0L3QsCDQv9GA0L7QuNGI0LXRgdGC0LLQuNC1IiAiUkVTVC9IVFRQIDo4MCIKICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRfcmVsXzEgPSBiaWxsaW5nLmJpbGxpbmdfY29udHJvbGxlciAtPiB0cmFja2VyX2ZhY2FkZSAi0JjQvdGE0L7RgNC80LjRgNC+0LLQsNC90LjQtSDQvtCxINC40YHRh9C10YDQv9Cw0L3QuNC4INGB0YDQtdC00YHRgtCyINC90LAg0L/QvtC00L/QuNGB0LrQtSIKICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfcXVldWUgLT4gZHJvbmUgItCa0L7QvNCw0L3QtNGLINGD0L/RgNCw0LLQu9C10L3QuNGPIiAiTVFUVCA6MTg4MyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfcXVldWUgLT4gdHJhY2tlcl9jb250cm9sZXIgItCi0LXQu9C10LzQtdGC0YDQuNGPIiAiTVFUVCA6MTg4MyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRyYWNrZXJfcXVldWUgLT4gdHJhY2tlcl9jb250cm9sZXIgItCh0L7QsdGL0YLQuNGPINCx0LXQt9C+0L/QsNGB0L3QvtGB0YLQuCIgIk1RVFQgOjE4ODMiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBkcm9uZSAtPiB0cmFja2VyX3F1ZXVlICLQotC10LvQtdC80LXRgtGA0LjRjyIgIk1RVFQgOjE4ODMiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBkcm9uZSAtPiB0cmFja2VyX3F1ZXVlICLQodC+0LHRi9GC0LjRjyDQsdC10LfQvtC/0LDRgdC90L7RgdGC0LgiICJNUVRUIDoxODgzIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgZHJvbmUgLT4gY2xpZW50X21vYmlsZV9hcHAgItCS0LjQtNC10L4iICJXZWJSVEMgdGNwLzQ0MyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRyb25lIC0+IGNsaWVudF93ZWJfYXBwICLQktC40LTQtdC+IiAiV2ViUlRDIHRjcC80NDMiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRfcmVsXzIgPSBicG0gLT4gdHJhY2tlcl9mYWNhZGUgItCj0L/RgNCw0LLQu9C10L3QuNC1INC00YDQvtC90L7QvCIgIlJFU1QvSFRUUCA6ODAiCiAgICAgICAgICAgICAgICAgICAgICAgIH0gICAgICAKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgIyBSZWxhdGlvbnMgd2l0aCBjdXN0b21lcgogICAgICAgICAgICAgICAgICAgIHVzZXIgLT4gY2xpZW50X21vYmlsZV9hcHAgItCj0L/RgNCw0LLQu9C10L3QuNC1INGD0YHQu9GD0LPQvtC5IgogICAgICAgICAgICAgICAgICAgIHVzZXIgLT4gY2xpZW50X3dlYl9hcHAgItCj0L/RgNCw0LLQu9C10L3QuNC1INGD0YHQu9GD0LPQvtC5IgogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgZGVwbG95bWVudEVudmlyb25tZW50ICJQcm9kdWN0aW9uIiB7CiAgICAgICAgICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgImlPUyBEZXZpY2UiIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICLQnNC+0LHQuNC70YzQvdGL0LUg0YLQtdC70LXRhNC+0L3RiyDQuCDQv9C70LDQvdGI0LXRgtGLINC60LvQuNC10L3RgtC+0LIg0LLQviDQstC90LXRiNC90LXQuSDRgdC10YLQuCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJvcyIgImlPUyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAicmFtIiAiOCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGd1YXJkX3N5c3RlbS5jbGllbnRfbW9iaWxlX2FwcAogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAKICAgICAgICAgICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiQW5kcm9pZCBEZXZpY2UiIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICLQnNC+0LHQuNC70YzQvdGL0LUg0YLQtdC70LXRhNC+0L3RiyDQuCDQv9C70LDQvdGI0LXRgtGLINC60LvQuNC10L3RgtC+0LIg0LLQviDQstC90LXRiNC90LXQuSDRgdC10YLQuCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGd1YXJkX3N5c3RlbS5jbGllbnRfbW9iaWxlX2FwcAogICAgICAgICAgICAgICAgICAgICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIm9zIiAiQW5kcm9pZCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiY3B1IiAiMiIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAicmFtIiAiOCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiaGRkIiAiNzAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJDbGllbnQgRGV2aWNlIDIiIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICLQodGC0LDRhtC40L7QvdCw0YDQvdGL0LUg0LrQvtC80L/RjNGO0YLQtdGA0Ysg0L/QvtC70YzQt9C+0LLQsNGC0LXQu9C10Lkg0LLQviDQstC90LXRiNC90LXQuSDRgdC10YLQuCDQuNC70Lgg0LzQvtCx0LjQu9GM0L3Ri9C1INGD0YHRgtGA0L7QudGB0YLQstCwINGBINGD0YHRgtCw0L3QvtCy0LvQtdC90L3Ri9C8INCx0YDQsNGD0LfQtdGA0L7QvCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJvcyIgIldpbmRvd3MvTWFjT1MvTGludXggVWJ1bnR1IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJjcHUiICI0IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJyYW0iICI4IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJoZGQiICI3MCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGd1YXJkX3N5c3RlbS5jbGllbnRfd2ViX2FwcAogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAKICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiRE1aIiB7CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJCRkYgU2VydmVyIE1vYmlsZSIgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uICJCYWNrZW5kINC00LvRjyDQvNC+0LHQuNC70YzQvdC+0LPQviDQv9GA0LjQu9C+0LbQtdC90LjRjyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpbnN0YW5jZXMgMwogICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJvcyIgIk9yYWNsZSBFbnRlcHJpc2UgTGludXgiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiY3B1IiAiNCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJyYW0iICIxNiIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJoZGQiICI3MCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgY29udGFpbmVySW5zdGFuY2UgZ3VhcmRfc3lzdGVtLmNsaWVudF9tb2JpbGVfYXBwX2JhY2tlbmQgCiAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAKICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgYmZmdzEgPSBkZXBsb3ltZW50Tm9kZSAiQkZGIFNlcnZlciBXZWIiIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBkZXNjcmlwdGlvbiAiQmFja2VuZCDQtNC70Y8g0LLQtdCx0LAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaW5zdGFuY2VzIDMKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAib3MiICJPcmFjbGUgRW50ZXByaXNlIExpbnV4IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImNwdSIgIjQiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAicmFtIiAiMTYiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiaGRkIiAiNzAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGd1YXJkX3N5c3RlbS5jbGllbnRfd2ViX2FwcF9iYWNrZW5kCiAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIkJQTSBDbHVzdGVyIiB7CiAgICAgICAgICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJCUE0iIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAhc2NyaXB0IGdyb292eSB7ICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZWxlbWVudC5kZXNjcmlwdGlvbiA9IHdvcmtzcGFjZS5tb2RlbC5zb2Z0d2FyZVN5c3RlbXMuZmluZHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZWxlbWVudCAtPiBlbGVtZW50Lm5hbWU9PSfQnNC+0LHQuNC70YzQvdGL0Lkg0YLQtdC70L7RhdGA0LDQvdC40YLQtdC70YwnfS5jb250YWluZXJzLmZpbmQgeyAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbGVtZW50IC0+IGVsZW1lbnQubmFtZT09J0JQTSd9LmRlc2NyaXB0aW9uCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGluc3RhbmNlcyAyCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcHJvcGVydGllcyB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAib3MiICJPcmFjbGUgRW50ZXByaXNlIExpbnV4IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImNwdSIgIjQiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAicmFtIiAiOCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJoZGQiICI3MCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBjb250YWluZXJJbnN0YW5jZSBndWFyZF9zeXN0ZW0uYnBtCiAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIkludmVudG9yeSBzZXJ2ZXIiIHsKICAgICAgICAgICAgICAgICAgICAgICAgIXNjcmlwdCBncm9vdnkgeyAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbGVtZW50LmRlc2NyaXB0aW9uID0gd29ya3NwYWNlLm1vZGVsLnNvZnR3YXJlU3lzdGVtcy5maW5kewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGVsZW1lbnQgLT4gZWxlbWVudC5uYW1lPT0n0JzQvtCx0LjQu9GM0L3Ri9C5INGC0LXQu9C+0YXRgNCw0L3QuNGC0LXQu9GMJ30uY29udGFpbmVycy5maW5kIHsgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGVsZW1lbnQgLT4gZWxlbWVudC5uYW1lPT0nSW52ZW50b3J5J30uZGVzY3JpcHRpb24KICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAib3MiICJPcmFjbGUgRW50ZXByaXNlIExpbnV4IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJjcHUiICI0IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJyYW0iICI4IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJoZGQiICI3MCIKICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICBjb250YWluZXJJbnN0YW5jZSBndWFyZF9zeXN0ZW0uaW52ZW50b3J5ICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAKICAgICAgICAKICAgICAgICAgICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiVHJhY2tlciBGaXJzdCIgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICFzY3JpcHQgZ3Jvb3Z5IHsgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbGVtZW50LmRlc2NyaXB0aW9uID0gd29ya3NwYWNlLm1vZGVsLnNvZnR3YXJlU3lzdGVtcy5maW5kewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbGVtZW50IC0+IGVsZW1lbnQubmFtZT09J9Cc0L7QsdC40LvRjNC90YvQuSDRgtC10LvQvtGF0YDQsNC90LjRgtC10LvRjCd9LmNvbnRhaW5lcnMuZmluZCB7IAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGVsZW1lbnQgLT4gZWxlbWVudC5uYW1lPT0nVHJhY2tlcid9LmRlc2NyaXB0aW9uCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHByb3BlcnRpZXMgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIm9zIiAiT3JhY2xlIEVudGVwcmlzZSBMaW51eCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJjcHUiICI0IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgInJhbSIgIjgiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiaGRkIiAiNzAiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGd1YXJkX3N5c3RlbS50cmFja2VyCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgIAogICAgICAgIAogICAgICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJCaWxsaW5nIiB7CiAgICAgICAgICAgICAgICAgICAgICAgICFzY3JpcHQgZ3Jvb3Z5IHsgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZWxlbWVudC5kZXNjcmlwdGlvbiA9IHdvcmtzcGFjZS5tb2RlbC5zb2Z0d2FyZVN5c3RlbXMuZmluZHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbGVtZW50IC0+IGVsZW1lbnQubmFtZT09J9Cc0L7QsdC40LvRjNC90YvQuSDRgtC10LvQvtGF0YDQsNC90LjRgtC10LvRjCd9LmNvbnRhaW5lcnMuZmluZCB7IAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbGVtZW50IC0+IGVsZW1lbnQubmFtZT09J0JpbGxpbmcnfS5kZXNjcmlwdGlvbgogICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICBwcm9wZXJ0aWVzIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJvcyIgIk9yYWNsZSBFbnRlcHJpc2UgTGludXgiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiY3B1IiAiNCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJyYW0iICIzMiIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJoZGQiICI3MCIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRhaW5lckluc3RhbmNlIGd1YXJkX3N5c3RlbS5iaWxsaW5nCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgIAogICAgICAgICAgICAgICAgfQogICAgICAgIAogICAgfQoKICAgIHZpZXdzIHsKICAgICAgICB0aGVtZXMgZGVmYXVsdAoKICAgICAgICBzeXN0ZW1MYW5kc2NhcGUgIlN5c3RlbUxhbmRzY2FwZSJ7CiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBhdXRvTGF5b3V0IGxyCiAgICAgICAgfQoKICAgICAgICBzeXN0ZW1Db250ZXh0IGd1YXJkX3N5c3RlbSAiQ29udGV4dCIgewogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICAgICAgYXV0b0xheW91dAogICAgICAgIH0KCiAgICAgICAgY29udGFpbmVyIGd1YXJkX3N5c3RlbSAiQ29udGFpbmVycyIgewogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICAgICAgYXV0b0xheW91dAogICAgICAgIH0KICAgICAgICAKICAgICAgICBjb21wb25lbnQgZ3VhcmRfc3lzdGVtLmJpbGxpbmcgIkJpbGxpbmciewogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICAgICAgYXV0b0xheW91dCBscgogICAgICAgICAgICBhbmltYXRpb24gewogICAgICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmJwbQogICAgICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLnRyYWNrZXIKICAgICAgICAgICAgICAgIGd1YXJkX3N5c3RlbS5iaWxsaW5nLmJpbGxpbmdfcXVldWUKICAgICAgICAgICAgICAgIGd1YXJkX3N5c3RlbS5iaWxsaW5nLmJpbGxpbmdfY29udHJvbGxlcgogICAgICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmJpbGxpbmcuYmlsbGluZ19kYXRhYmFzZSAgCiAgICAgICAgICAgICAgICBwYXltZW50X3N5c3RlbQogICAgICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmJpbGxpbmcuYmlsbGluZ19mYWNhZGUKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgY29tcG9uZW50IGd1YXJkX3N5c3RlbS5pbnZlbnRvcnkgIkludmVudG9yeSJ7CiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBhdXRvTGF5b3V0IGxyCiAgICAgICAgfQoKICAgICAgICBjb21wb25lbnQgZ3VhcmRfc3lzdGVtLmNybSAiQ1JNInsKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgICAgIGF1dG9MYXlvdXQKICAgICAgICB9CgogICAgICAgIGNvbXBvbmVudCBndWFyZF9zeXN0ZW0udHJhY2tlciAiVHJhY2tpbmciewogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICAgICAgYXV0b0xheW91dAogICAgICAgIH0KCiAgICAgICAgZGVwbG95bWVudCBndWFyZF9zeXN0ZW0gIlByb2R1Y3Rpb24iICJ2cyJ7CiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBkZXNjcmlwdGlvbiAi0KLQuNC/0L7QstC+0LUg0YDQsNC30LzQtdGJ0LXQvdC40LUg0L7QsdC+0YDRg9C00L7QstCw0L3QuNGPIgoKICAgICAgICAgICAgYXV0b0xheW91dAogICAgICAgIH0KCiAgICAgICAgZHluYW1pYyBndWFyZF9zeXN0ZW0gIlVDMDEiIHsKICAgICAgICAgICAgYXV0b0xheW91dCBscgogICAgICAgICAgICBkZXNjcmlwdGlvbiAi0KLQtdGB0YLQvtCy0YvQuSDRgdGG0LXQvdCw0YDQuNC5IgoKICAgICAgICAgICAgdXNlciAtPiBndWFyZF9zeXN0ZW0uY2xpZW50X21vYmlsZV9hcHAgIjEuINCa0LvQuNC10L3RgiDQvtGC0LrRgNGL0LLQsNC10YIg0LzQvtCx0LjQu9GM0L3QvtC1INC/0YDQuNC70L7QttC10L3QuNC1IgogICAgICAgICAgICBndWFyZF9zeXN0ZW0uY2xpZW50X21vYmlsZV9hcHAgLT4gc3NvLmF1dGhvcml6YXRpb25fcGFzc3dvcmQgIjIuINCc0L7QsdC40LvRjNC90L7QtSDQv9GA0LjQu9C+0LbQtdC90LjQtSDQt9Cw0L/RgNCw0YjQuNCy0LDQtdGCINC00LDQvdC90YvQtSDQtNC70Y8g0LDRg9GC0LXQvdGC0LjRhNC40LrQsNGG0LjQuCDQutC70LjQtdC90YLQsCAobG9naW4vcGFzc3dvcmQpINC4INC/0YDQvtCy0LXRgNGP0LXRgiDQuNGFINGH0LXRgNC10LcgV2ViU1NPIgogICAgICAgICAgICB1c2VyIC0+IGd1YXJkX3N5c3RlbS5jbGllbnRfbW9iaWxlX2FwcCAiMy4g0JrQu9C40LXQvdGCINCy0YvQsdC40YDQsNC10YIg0YDQsNC30LTQtdC7INCX0LDQutCw0Lcg0LTRgNC+0L3QsCIKICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmNsaWVudF9tb2JpbGVfYXBwIC0+IGd1YXJkX3N5c3RlbS5jbGllbnRfbW9iaWxlX2FwcF9iYWNrZW5kICI0LiDQnNC+0LHQuNC70YzQvdC+0LUg0L/RgNC40LvQvtC20LXQvdC40LUg0LfQsNC/0YDQsNGI0LjQstCw0LXRgiBiYWNrZW5kINC00LvRjyDQv9C+0LjRgdC60LAg0LTRgNC+0L3QsCIKICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmNsaWVudF9tb2JpbGVfYXBwX2JhY2tlbmQgLT4gZ3VhcmRfc3lzdGVtLmJwbSAiNS4gQmFja2VuZCDQvNC+0LHQuNC70YzQvdC+0LPQviDQv9GA0LjQu9C+0LbQtdC90LjRjyDQt9Cw0L/Rg9GB0LrQsNC10YIg0L3QsCBCUE0g0YHRhtC10L3QsNGA0LjQuSDQv9C+0LjRgdC60LAg0LTRgNC+0L3QsCIKICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmJwbSAtPiBndWFyZF9zeXN0ZW0uY3JtICI2LiBCUE0g0L/QvtC70YPRh9Cw0LXRgiDQsiBDUk0g0LTQsNC90L3Ri9C1INC/0L4g0LrQu9C40LXQvdGC0YMg0Lgg0LXQs9C+INC00LXRgtGP0LwiCiAgICAgICAgICAgIGd1YXJkX3N5c3RlbS5icG0gLT4gZ3VhcmRfc3lzdGVtLmNybSAiNy4gQlBNINC/0L7Qu9GD0YfQsNC10YIg0LjQvdGE0L7RgNC80LDRhtC40Y4g0L4g0LzQsNGA0YjRgNGD0YLQtSDRgNC10LHQtdC90LrQsCIKICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmJwbSAtPiBtbGMgIjguIEJQTSDQv9C+0LvRg9GH0LDQtdGCINC40L3RhNC+0YDQvNCw0YbQuNGOINC+INGC0LXQutGD0YnQtdC8INC/0L7Qu9C+0LbQtdC90LjQuCDRgNC10LHQtdC90LrQsCDQuNC3IE1MQyIKICAgICAgICAgICAgZ3VhcmRfc3lzdGVtLmJwbSAtPiBndWFyZF9zeXN0ZW0uYmlsbGluZyAgIjkuIEJQTSDQv9C+0LvRg9GH0LDQtdGCINC00LDQvdC90YvQtSDQv9C+INC00L7RgdGC0LDRgtC+0YfQvdC+0YHRgtC4INCx0LDQu9Cw0L3RgdCwINGDINC60LvQuNC10L3RgtCwIgogICAgICAgICAgICBndWFyZF9zeXN0ZW0uYnBtIC0+IGd1YXJkX3N5c3RlbS5pbnZlbnRvcnkgIjEwLiBCUE0g0L/QvtC70YPRh9Cw0LXRgiDQtNCw0L3QvdGL0LUg0LIgaW52ZW50b3J5INC+INGB0LLQvtCx0L7QtNC90YvRhSDQtNGA0L7QvdCw0YUiCiAgICAgICAgICAgIGd1YXJkX3N5c3RlbS5icG0gLT4gZ3VhcmRfc3lzdGVtLnRyYWNrZXIgIjExLiBCUE0g0L/QtdGA0LXQtNCw0LXRgiDQutC+0LzQsNC90LTRgyDQvdCwINC00YDQvtC90LAg0L4g0L3QsNGH0LDQu9C1INGC0YDRjdC60LjQvdCz0LAiIAogICAgICAgICAgICAKICAgICAgICB9CiAgICAgICAgCiAgICAgICAgc3R5bGVzIHsKICAgICAgICAgICAgZWxlbWVudCAiUGVyc29uIiB7CiAgICAgICAgICAgICAgICBjb2xvciAjZmZmZmZmCiAgICAgICAgICAgICAgICBmb250U2l6ZSAyMgogICAgICAgICAgICAgICAgc2hhcGUgUGVyc29uCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiQ3VzdG9tZXIiIHsKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzA4NDI3YgogICAgICAgICAgICB9CgogICAgICAgICAgICBlbGVtZW50ICJFeHRlcm5hbFN5c3RlbSIgewogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjYzBjMGMwCiAgICAgICAgICAgICAgICBjb2xvciAjZmZmZmZmCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiQ29udGFpbmVyIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICM0MzhkZDUKICAgICAgICAgICAgICAgIGNvbG9yICNmZmZmZmYKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJXZWJCcm93c2VyIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBXZWJCcm93c2VyCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiTW9iaWxlQXBwIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBNb2JpbGVEZXZpY2VQb3J0cmFpdAogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkRhdGFiYXNlIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBDeWxpbmRlcgogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIlF1ZXVlIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBQaXBlCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiQ29tcG9uZW50IiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICM4NWJiZjAKICAgICAgICAgICAgICAgIGNvbG9yICMwMDAwMDAKICAgICAgICAgICAgICAgIHNoYXBlIENvbXBvbmVudAogICAgICAgICAgICB9CgogICAgICAgICAgICAKICAgICAgICB9CiAgICB9Cgp9"
+  },
+  "views" : {
+    "componentViews" : [ {
+      "animations" : [ {
+        "elements" : [ "33" ],
+        "order" : 1
+      }, {
+        "elements" : [ "69" ],
+        "order" : 2,
+        "relationships" : [ "107" ]
+      }, {
+        "elements" : [ "42" ],
+        "order" : 3,
+        "relationships" : [ "80" ]
+      }, {
+        "elements" : [ "41" ],
+        "order" : 4,
+        "relationships" : [ "43", "92" ]
+      }, {
+        "elements" : [ "40" ],
+        "order" : 5,
+        "relationships" : [ "50" ]
+      }, {
+        "elements" : [ "1" ],
+        "order" : 6
+      }, {
+        "elements" : [ "39" ],
+        "order" : 7,
+        "relationships" : [ "44", "45", "46", "47", "51", "83" ]
+      } ],
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "38",
+      "elements" : [ {
+        "id" : "1",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "33",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "39",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "40",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "41",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "42",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "69",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "Billing",
+      "order" : 4,
+      "relationships" : [ {
+        "id" : "107"
+      }, {
+        "id" : "43"
+      }, {
+        "id" : "44"
+      }, {
+        "id" : "45"
+      }, {
+        "id" : "46"
+      }, {
+        "id" : "47"
+      }, {
+        "id" : "50"
+      }, {
+        "id" : "51"
+      }, {
+        "id" : "80"
+      }, {
+        "id" : "83"
+      }, {
+        "id" : "92"
+      } ]
+    }, {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "53",
+      "elements" : [ {
+        "id" : "33",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "54",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "55",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "69",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "Inventory",
+      "order" : 5,
+      "relationships" : [ {
+        "id" : "107"
+      }, {
+        "id" : "56"
+      }, {
+        "id" : "57"
+      }, {
+        "id" : "86"
+      } ]
+    }, {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "59",
+      "elements" : [ {
+        "id" : "4",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "33",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "60",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "61",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "CRM",
+      "order" : 6,
+      "relationships" : [ {
+        "id" : "62"
+      }, {
+        "id" : "63"
+      }, {
+        "id" : "66"
+      }, {
+        "id" : "67"
+      } ]
+    }, {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "69",
+      "elements" : [ {
+        "id" : "2",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "8",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "33",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "38",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "53",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "70",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "71",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "72",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "73",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "Tracking",
+      "order" : 7,
+      "relationships" : [ {
+        "id" : "100"
+      }, {
+        "id" : "103"
+      }, {
+        "id" : "106"
+      }, {
+        "id" : "52"
+      }, {
+        "id" : "58"
+      }, {
+        "id" : "74"
+      }, {
+        "id" : "75"
+      }, {
+        "id" : "76"
+      }, {
+        "id" : "77"
+      }, {
+        "id" : "79"
+      }, {
+        "id" : "85"
+      }, {
+        "id" : "88"
+      }, {
+        "id" : "93"
+      }, {
+        "id" : "95"
+      }, {
+        "id" : "98"
+      }, {
+        "id" : "99"
+      } ]
+    } ],
+    "configuration" : {
+      "branding" : { },
+      "lastSavedView" : "Containers",
+      "metadataSymbols" : "SquareBrackets",
+      "styles" : {
+        "elements" : [ {
+          "color" : "#ffffff",
+          "fontSize" : 22,
+          "shape" : "Person",
+          "tag" : "Person"
+        }, {
+          "background" : "#08427b",
+          "tag" : "Customer"
+        }, {
+          "background" : "#c0c0c0",
+          "color" : "#ffffff",
+          "tag" : "ExternalSystem"
+        }, {
+          "background" : "#438dd5",
+          "color" : "#ffffff",
+          "tag" : "Container"
+        }, {
+          "shape" : "WebBrowser",
+          "tag" : "WebBrowser"
+        }, {
+          "shape" : "MobileDevicePortrait",
+          "tag" : "MobileApp"
+        }, {
+          "shape" : "Cylinder",
+          "tag" : "Database"
+        }, {
+          "shape" : "Pipe",
+          "tag" : "Queue"
+        }, {
+          "background" : "#85bbf0",
+          "color" : "#000000",
+          "shape" : "Component",
+          "tag" : "Component"
+        } ]
+      },
+      "terminology" : { },
+      "themes" : [ "https://static.structurizr.com/themes/default/theme.json" ]
+    },
+    "containerViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "dimensions" : {
+        "height" : 6215,
+        "width" : 6830
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 4069,
+        "y" : 199
+      }, {
+        "id" : "2",
+        "x" : 199,
+        "y" : 2349
+      }, {
+        "id" : "4",
+        "x" : 5479,
+        "y" : 4199
+      }, {
+        "id" : "8",
+        "x" : 6179,
+        "y" : 2349
+      }, {
+        "id" : "9",
+        "x" : 199,
+        "y" : 5549
+      }, {
+        "id" : "10",
+        "x" : 5479,
+        "y" : 2299
+      }, {
+        "id" : "12",
+        "x" : 4839,
+        "y" : 3149
+      }, {
+        "id" : "13",
+        "x" : 4089,
+        "y" : 3224
+      }, {
+        "id" : "17",
+        "x" : 1739,
+        "y" : 4199
+      }, {
+        "id" : "18",
+        "x" : 989,
+        "y" : 4199
+      }, {
+        "id" : "33",
+        "x" : 1709,
+        "y" : 4949
+      }, {
+        "id" : "38",
+        "x" : 2549,
+        "y" : 1099
+      }, {
+        "id" : "53",
+        "x" : 2549,
+        "y" : 5549
+      }, {
+        "id" : "59",
+        "x" : 3299,
+        "y" : 5549
+      }, {
+        "id" : "69",
+        "x" : 2569,
+        "y" : 1699
+      } ],
+      "externalSoftwareSystemBoundariesVisible" : false,
+      "key" : "Containers",
+      "order" : 3,
+      "relationships" : [ {
+        "id" : "101"
+      }, {
+        "id" : "104"
+      }, {
+        "id" : "105"
+      }, {
+        "id" : "107"
+      }, {
+        "id" : "108"
+      }, {
+        "id" : "110"
+      }, {
+        "id" : "14"
+      }, {
+        "id" : "16"
+      }, {
+        "id" : "19"
+      }, {
+        "id" : "20"
+      }, {
+        "id" : "22"
+      }, {
+        "id" : "30"
+      }, {
+        "id" : "34"
+      }, {
+        "id" : "35"
+      }, {
+        "id" : "36"
+      }, {
+        "id" : "48"
+      }, {
+        "id" : "52"
+      }, {
+        "id" : "58"
+      }, {
+        "id" : "64"
+      }, {
+        "id" : "68"
+      }, {
+        "id" : "81"
+      }, {
+        "id" : "87"
+      }, {
+        "id" : "89"
+      }, {
+        "id" : "94"
+      }, {
+        "id" : "96"
+      } ],
+      "softwareSystemId" : "11"
+    } ],
+    "deploymentViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Типовое размещение оборудования",
+      "elements" : [ {
+        "id" : "111",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "112",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "113",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "114",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "115",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "116",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "117",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "118",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "119",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "122",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "123",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "125",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "126",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "127",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "130",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "131",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "133",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "134",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "137",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "138",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "environment" : "Production",
+      "key" : "vs",
+      "order" : 8,
+      "relationships" : [ {
+        "id" : "120"
+      }, {
+        "id" : "121"
+      }, {
+        "id" : "124"
+      }, {
+        "id" : "128"
+      }, {
+        "id" : "129"
+      }, {
+        "id" : "132"
+      }, {
+        "id" : "135"
+      }, {
+        "id" : "136"
+      }, {
+        "id" : "139"
+      }, {
+        "id" : "140"
+      }, {
+        "id" : "141"
+      } ],
+      "softwareSystemId" : "11"
+    } ],
+    "dynamicViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Тестовый сценарий",
+      "elementId" : "11",
+      "elements" : [ {
+        "id" : "5",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "9",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "10",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "12",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "17",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "33",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "38",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "53",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "59",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "69",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalBoundariesVisible" : false,
+      "key" : "UC01",
+      "order" : 9,
+      "relationships" : [ {
+        "description" : "1. Клиент открывает мобильное приложение",
+        "id" : "108",
+        "order" : "1",
+        "response" : false
+      }, {
+        "description" : "2. Мобильное приложение запрашивает данные для аутентификации клиента (login/password) и проверяет их через WebSSO",
+        "id" : "21",
+        "order" : "2",
+        "response" : false
+      }, {
+        "description" : "3. Клиент выбирает раздел Заказ дрона",
+        "id" : "108",
+        "order" : "3",
+        "response" : false
+      }, {
+        "description" : "4. Мобильное приложение запрашивает backend для поиска дрона",
+        "id" : "19",
+        "order" : "4",
+        "response" : false
+      }, {
+        "description" : "5. Backend мобильного приложения запускает на BPM сценарий поиска дрона",
+        "id" : "34",
+        "order" : "5",
+        "response" : false
+      }, {
+        "description" : "6. BPM получает в CRM данные по клиенту и его детям",
+        "id" : "68",
+        "order" : "6",
+        "response" : false
+      }, {
+        "description" : "7. BPM получает информацию о маршруте ребенка",
+        "id" : "68",
+        "order" : "7",
+        "response" : false
+      }, {
+        "description" : "8. BPM получает информацию о текущем положении ребенка из MLC",
+        "id" : "36",
+        "order" : "8",
+        "response" : false
+      }, {
+        "description" : "9. BPM получает данные по достаточности баланса у клиента",
+        "id" : "52",
+        "order" : "9",
+        "response" : false
+      }, {
+        "description" : "10. BPM получает данные в inventory о свободных дронах",
+        "id" : "58",
+        "order" : "10",
+        "response" : false
+      }, {
+        "description" : "11. BPM передает команду на дрона о начале трэкинга",
+        "id" : "107",
+        "order" : "11",
+        "response" : false
+      } ]
+    } ],
+    "systemContextViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "2",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "4",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "8",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "9",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "10",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "11",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "key" : "Context",
+      "order" : 2,
+      "relationships" : [ {
+        "id" : "102"
+      }, {
+        "id" : "109"
+      }, {
+        "id" : "15"
+      }, {
+        "id" : "24"
+      }, {
+        "id" : "37"
+      }, {
+        "id" : "49"
+      }, {
+        "id" : "65"
+      }, {
+        "id" : "90"
+      }, {
+        "id" : "97"
+      } ],
+      "softwareSystemId" : "11"
+    } ],
+    "systemLandscapeViews" : [ {
+      "automaticLayout" : {
+        "applied" : false,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "dimensions" : {
+        "height" : 3274,
+        "width" : 2860
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 219,
+        "y" : 2104
+      }, {
+        "id" : "2",
+        "x" : 2169,
+        "y" : 219
+      }, {
+        "id" : "3",
+        "x" : 2169,
+        "y" : 819
+      }, {
+        "id" : "4",
+        "x" : 2169,
+        "y" : 1439
+      }, {
+        "id" : "8",
+        "x" : 2169,
+        "y" : 2099
+      }, {
+        "id" : "9",
+        "x" : 2169,
+        "y" : 2699
+      }, {
+        "id" : "10",
+        "x" : 244,
+        "y" : 1384
+      }, {
+        "id" : "11",
+        "x" : 1119,
+        "y" : 1769
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "key" : "SystemLandscape",
+      "order" : 1,
+      "relationships" : [ {
+        "id" : "102"
+      }, {
+        "id" : "109"
+      }, {
+        "id" : "15"
+      }, {
+        "id" : "24"
+      }, {
+        "id" : "37"
+      }, {
+        "id" : "49"
+      }, {
+        "id" : "65"
+      }, {
+        "id" : "90"
+      }, {
+        "id" : "97"
+      } ]
+    } ]
+  }
+}
