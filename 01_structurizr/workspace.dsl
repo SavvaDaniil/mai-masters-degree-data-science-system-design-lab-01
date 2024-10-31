@@ -28,25 +28,25 @@ workspace {
             api_application = container "Api Application" "Выполняет бизнес-логику, вызываемую с помощью API методам [JSON/HTTPS]" {
                 technology "Java Spring"
 
-                user_controller = component "UserController" {
+                api_user_controller = component "ApiUserController" {
                     technology "Spring Rest Controller"
                     description "Api методы для пользователей, авторизация, регистрация, восстановление пароля"
                 }
-                mail_controller = component "MailController" {
+                api_email_controller = component "ApiEmailController" {
                     technology "Spring Rest Controller"
                     description "Api методы для создания, редактирования, отправки писем"
                 }
-                mail_folder_controller = component "MailToFolderController" {
+                api_email_folder_controller = component "ApiEmailToFolderController" {
                     technology "Spring Rest Controller"
                     description "Api мотеды для папок с писем и подключение к этим папкам самих писем"
                 }
 
-                user_security_util = component "UserSecurityUtil" {
+                user_middleware = component "UserMiddleware" {
                     description "Аутентификация, авторизация пользователей. Валидация и генерация паролей пользователей."
                 }
-                user_controller -> user_security_util "Аутентификация и авторизация"
-                mail_controller -> user_security_util "Аутентификация и авторизация"
-                mail_folder_controller -> user_security_util "Аутентификация и авторизация"
+                api_user_controller -> user_middleware "Аутентификация и авторизация"
+                api_email_controller -> user_middleware "Аутентификация и авторизация"
+                api_email_folder_controller -> user_middleware "Аутентификация и авторизация"
 
 
                 user_facade = component "UserFacade" {
@@ -58,36 +58,36 @@ workspace {
                     description "ORM JPA. Создание нового пользователя. Поиск пользователя по логину, по маске имя и фамилия."
                 }
 
-                user_controller -> user_facade "Uses"
+                api_user_controller -> user_facade "Uses"
                 user_facade -> user_repository "Uses"
 
-                mail_facade = component "MailFacade" {
+                email_facade = component "EmailFacade" {
                     technology "Spring Bean"
                     description "Бизнес-логика для взаимодействия пользователя с письмами"
                 }
-                mail_repository = component "MailRepository" {
+                email_repository = component "EmailRepository" {
                     technology "Spring Bean"
                     description "ORM JPA. Создание нового почтового письма. Получение письма по коду. Получение всех писем в папке (INNER JOIN)"
                 }
-                mail_controller -> mail_facade "Uses"
-                mail_facade -> mail_repository "Uses"
+                api_email_controller -> email_facade "Uses"
+                email_facade -> email_repository "Uses"
 
-                mail_folder_facade = component "MailFolderFacade" {
+                email_folder_facade = component "EmailFolderFacade" {
                     technology "Spring Bean"
                     description "Бизнес-логика для взаимодействия пользователя с папками писем"
                 }
-                mail_folder_repository = component "MailFolderRepository" {
+                email_folder_repository = component "EmailFolderRepository" {
                     technology "Spring Bean"
                     description "ORM JPA. Создание новой почтовой папки. Получение перечня всех папок."
                 }
-                connection_mail_to_mail_folder_repository = component "ConnectionMailToMailFolderRepository" {
+                connection_email_to_email_folder_repository = component "ConnectionEmailToEmailFolderRepository" {
                     technology "Spring Bean"
                     description "ORM JPA. Осуществляет ManyToMany зависимость для писем и папок с письмами. Позволяет подключать/отключать письма к почтовым папкам."
                 }
-                mail_folder_controller -> mail_folder_facade "Uses"
-                mail_folder_facade -> mail_folder_repository "Uses"
-                mail_folder_facade -> connection_mail_to_mail_folder_repository "Uses"
-                mail_facade -> connection_mail_to_mail_folder_repository "Подключить/отключить письмо от папки"
+                api_email_folder_controller -> email_folder_facade "Uses"
+                email_folder_facade -> email_folder_repository "Uses"
+                email_folder_facade -> connection_email_to_email_folder_repository "Uses"
+                email_facade -> connection_email_to_email_folder_repository "Подключить/отключить письмо от папки"
 
             }
             database = container "Database" "База данных системы, хранит информацию о пользователях, письмах и папках с письмами" {
@@ -98,22 +98,22 @@ workspace {
             api_application -> database "Сохранение и получение информации"
 
             
-            single_page_application -> api_application.user_controller "Вызов api методов"
-            single_page_application -> api_application.mail_controller "Вызов api методов"
-            single_page_application -> api_application.mail_folder_controller "Вызов api методов"
+            single_page_application -> api_application.api_user_controller "Вызов api методов"
+            single_page_application -> api_application.api_email_controller "Вызов api методов"
+            single_page_application -> api_application.api_email_folder_controller "Вызов api методов"
 
-            mobile_application -> api_application.user_controller "Вызов api методов"
-            mobile_application -> api_application.mail_controller "Вызов api методов"
-            mobile_application -> api_application.mail_folder_controller "Вызов api методов"
+            mobile_application -> api_application.api_user_controller "Вызов api методов"
+            mobile_application -> api_application.api_email_controller "Вызов api методов"
+            mobile_application -> api_application.api_email_folder_controller "Вызов api методов"
 
-            desktop_application -> api_application.user_controller "Вызов api методов"
-            desktop_application -> api_application.mail_controller "Вызов api методов"
-            desktop_application -> api_application.mail_folder_controller "Вызов api методов"
+            desktop_application -> api_application.api_user_controller "Вызов api методов"
+            desktop_application -> api_application.api_email_controller "Вызов api методов"
+            desktop_application -> api_application.api_email_folder_controller "Вызов api методов"
 
             api_application.user_repository -> database "CRUD операции [SQL]"
-            api_application.mail_repository -> database "CRUD операции [SQL]"
-            api_application.mail_folder_repository -> database "CRUD операции [SQL]"
-            api_application.connection_mail_to_mail_folder_repository -> database "CRUD операции [SQL]"
+            api_application.email_repository -> database "CRUD операции [SQL]"
+            api_application.email_folder_repository -> database "CRUD операции [SQL]"
+            api_application.connection_email_to_email_folder_repository -> database "CRUD операции [SQL]"
         }
         mail_server = softwareSystem "E-mail server" "Отдельный сервер, отвечающий за отправку писем"
 
@@ -126,7 +126,7 @@ workspace {
         users -> outlook_mail_system.desktop_application "Взаимодействие через установленное дэкстопное приложение"
         outlook_mail_system.api_application -> mail_server "Отправки электронных писем"
 
-        outlook_mail_system.api_application.mail_facade -> mail_server "Отправки электронных писем"
+        outlook_mail_system.api_application.email_facade -> mail_server "Отправки электронных писем"
 
     }
 
@@ -153,15 +153,15 @@ workspace {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Создание нового пользователя"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "PUT /user"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "PUT /api/user"
             outlook_mail_system.api_application -> outlook_mail_system.database "INSERT INTO user VALUES(...)"
         }
 
-        dynamic outlook_mail_system "api_user_search" "Поиск пользователя по логину" {
+        dynamic outlook_mail_system "api_user_search_username" "Поиск пользователя по логину" {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Поиск пользователя по логину"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "POST /user/search"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "POST /api/user/search/username"
             outlook_mail_system.api_application -> outlook_mail_system.database "SELECT * FROM user WHERE username = ?"
         }
 
@@ -169,39 +169,39 @@ workspace {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Поиск пользователя по маске имя и фамилия"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "POST /user/search"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "POST /api/user/search"
             outlook_mail_system.api_application -> outlook_mail_system.database "SELECT * FROM user WHERE firstname = '%?%' AND secondname = '%?%'"
         }
 
-        dynamic outlook_mail_system "api_mail_folder_add" "Создание новой почтовой папки" {
+        dynamic outlook_mail_system "api_email_folder_add" "Создание новой почтовой папки" {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Создание новой почтовой папки"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "PUT /mail_folder"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "PUT /api/email_folder"
             outlook_mail_system.api_application -> outlook_mail_system.database "INSERT INTO mail_folder VALUES(...)"
         }
 
-        dynamic outlook_mail_system "api_mail_folder_list_all" "Получение перечня всех папок" {
+        dynamic outlook_mail_system "api_email_folder_list_all" "Получение перечня всех папок" {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Получение перечня всех папок"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "GET /mail_folder/all"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "GET /api/email_folder/list_all"
             outlook_mail_system.api_application -> outlook_mail_system.database "SELECT * FROM  mail_folder"
         }
 
-        dynamic outlook_mail_system "api_mail" "Создание нового письма в папке" {
+        dynamic outlook_mail_system "api_email_folder_add_email" "Создание нового письма в папке" {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Создание нового письма в папке"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "PUT /mail"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "PUT /api/email_folder/email"
             outlook_mail_system.api_application -> outlook_mail_system.database "INSERT INTO mail VALUES(...);INSERT INTO connection_mail_to_mail_folder VALUES(...)"
         }
 
-        dynamic outlook_mail_system "api_mail_by_mail_folder" "Получение всех писем в папке" {
+        dynamic outlook_mail_system "api_email_folder_email_list" "Получение всех писем в папке" {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Получение всех писем в папке"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "GET /mail/mail_folder/{mail_folder_id}"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "GET /api/email_folder/{email_folder_id}/email_list"
             outlook_mail_system.api_application -> outlook_mail_system.database "SELECT * FROM mail INNER JOIN connection_mail_to_mail_folder ON connection_mail_to_mail_folder.mail_id = mail.id AND ..."
         }
 
@@ -209,7 +209,7 @@ workspace {
             autoLayout lr
 
             users -> outlook_mail_system.single_page_application "Получение письма по коду"
-            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "GET /mail/{code}"
+            outlook_mail_system.single_page_application -> outlook_mail_system.api_application "GET /api/email/code/{code}"
             outlook_mail_system.api_application -> outlook_mail_system.database "SELECT * FROM mail WHERE code = ?"
         }
         
